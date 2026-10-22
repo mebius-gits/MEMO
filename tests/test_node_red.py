@@ -48,13 +48,18 @@ fns['mqtt-anomaly']({payload: JSON.parse(byId['mqtt-anomaly-co2'].payload)}, env
 let raised; for (let i = 0; i < 20; i++) raised = sample('raised-' + i);
 fns['mqtt-anomaly']({payload: JSON.parse(byId['mqtt-anomaly-reset'].payload)}, env, flow, node);
 let recovered; for (let i = 0; i < 20; i++) recovered = sample('recovered-' + i);
-const web = (method, payload, origin = 'http://localhost:5173') => fns['mqtt-anomaly']({req: {method, headers: {origin}}, payload}, env, flow, node);
-const webSet = web('POST', JSON.stringify({offsets: {co2_ppm: 900, temperature_c: 99}, enabled: false}));
+const web = (method, payload, origin = 'http://localhost:5173') =>
+    fns['mqtt-anomaly']({req: {method, headers: {origin}}, payload}, env, flow, node);
+const webSet = web('POST', JSON.stringify({
+    offsets: {co2_ppm: 900, temperature_c: 99}, enabled: false,
+}));
 const stopped = fns['mqtt-gate']({}, env, flow, node);
 const webBad = web('POST', 'not json');
 const webForeign = web('GET', {}, 'https://evil.example');
 const webReset = web('POST', JSON.stringify({reset: true, enabled: true}));
-console.log(JSON.stringify({requests, normal, raised, recovered, webSet, stopped, webBad, webForeign, webReset}));
+console.log(JSON.stringify({
+    requests, normal, raised, recovered, webSet, stopped, webBad, webForeign, webReset,
+}));
 """
     result = subprocess.run(
         [node_executable, "-e", script], check=True, capture_output=True, encoding="utf-8"
@@ -63,7 +68,11 @@ console.log(JSON.stringify({requests, normal, raised, recovered, webSet, stopped
     requests = output["requests"]
     normal = output["normal"]
     # Drift varies but stays inside the normal band, below every alert threshold.
-    for key, low, high in [("temperature_c", 23, 27.5), ("humidity_pct", 45, 68), ("co2_ppm", 550, 950)]:
+    for key, low, high in [
+        ("temperature_c", 23, 27.5),
+        ("humidity_pct", 45, 68),
+        ("co2_ppm", 550, 950),
+    ]:
         values = [metrics[key] for metrics in normal]
         assert low <= min(values) and max(values) <= high
         assert len(set(values)) > 10
