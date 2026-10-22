@@ -9,6 +9,7 @@ from memo.application.interaction import InteractionService
 from memo.domain.interaction import InteractionInput, Personality
 from memo.infrastructure.model_reply import ModelReplyGenerator, conversational, parse_content
 from memo.infrastructure.settings import Settings
+from memo.infrastructure.traditional import to_traditional
 
 
 def test_model_request_and_validated_output():
@@ -181,3 +182,33 @@ def test_compatibility_switches_merge_instructions_and_drop_json_mode():
     assert content.startswith(prepared.system_prompt) and content.endswith(prepared.user_prompt)
     assert "response_format" not in captured
     assert captured["reasoning_effort"] == "none"
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        # Stray Simplified characters are converted...
+        ("快開冷氣降溫，记得多喝水，别硬撐喔。", "快開冷氣降溫，記得多喝水，別硬撐喔。"),
+        # ...whole Simplified words follow context, including shared characters...
+        ("这里有点湿，头发都塌了，别一直坐着。", "這裡有點濕，頭髮都塌了，別一直坐著。"),
+        ("后来发现一只猫", "後來發現一隻貓"),
+        # ...while correct Traditional text, shared characters included, is never rewritten.
+        ("環境干擾已套用，台灣、臺北、干涉、乾淨。", "環境干擾已套用，台灣、臺北、干涉、乾淨。"),
+    ],
+)
+def test_stray_simplified_characters_become_traditional(text, expected):
+    assert to_traditional(text) == expected
+
+
+def test_model_reply_text_is_traditional():
+    def opener(request, timeout):
+        content = json.dumps({"text": "记得喝水，别中暑。", "emotion": {"label": "happy"}})
+        return io.BytesIO(json.dumps({"choices": [{"message": {"content": content}}]}).encode())
+
+    service = InteractionService(
+        ModelReplyGenerator(Settings(openai_model="m", _env_file=None), opener)
+    )
+    reply = service.respond(
+        service.prepare(InteractionInput("嗨", Personality()), datetime.now(timezone.utc))
+    )
+    assert reply.text == "記得喝水，別中暑。"

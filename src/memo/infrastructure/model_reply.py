@@ -10,6 +10,7 @@ from urllib.request import Request, urlopen
 
 from memo.domain.interaction import EmotionLabel, Reply
 from memo.infrastructure.template_reply import TemplateReplyGenerator
+from memo.infrastructure.traditional import to_traditional
 
 
 def parse_content(content):
@@ -125,7 +126,11 @@ class ModelReplyGenerator:
                     else EmotionLabel.CONCERNED
                 )
             action = None if prepared.input.proactive else extract_action(content)
-            return Reply(conversational(text), emotion, intensity, "model", None, action)
+            if action and isinstance(action.get("message"), str):
+                action = action | {"message": to_traditional(action["message"])}
+            # Models sometimes slip into Simplified characters; replies are Taiwan Traditional.
+            text = to_traditional(conversational(text))
+            return Reply(text, emotion, intensity, "model", None, action)
         except (TimeoutError, socket.timeout):
             reason = "model_timeout"
         except (HTTPError, URLError, OSError):
