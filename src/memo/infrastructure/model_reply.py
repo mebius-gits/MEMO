@@ -2,6 +2,7 @@
 
 import json
 import math
+import re
 import socket
 from dataclasses import replace
 from urllib.error import HTTPError, URLError
@@ -9,6 +10,51 @@ from urllib.request import Request, urlopen
 
 from memo.domain.interaction import EmotionLabel, Reply
 from memo.infrastructure.template_reply import TemplateReplyGenerator
+
+
+def parse_content(content):
+    """Read the model's JSON reply, tolerating fences, surrounding prose and extra fields.
+
+    Only a usable text is required; a bad expression degrades to neutral instead of
+    discarding the whole reply.
+    """
+    start, end = content.find("{"), content.rfind("}")
+    if start < 0 or end < start:
+        raise ValueError("no JSON object")
+    result = json.loads(content[start : end + 1])
+    text = result.get("text") if isinstance(result, dict) else None
+    if not isinstance(text, str) or not 1 <= len(text.strip()) <= 2000:
+        raise ValueError("invalid text")
+    emotion = result.get("emotion") if isinstance(result.get("emotion"), dict) else {}
+    try:
+        label = EmotionLabel(str(emotion.get("label", "")).strip().lower())
+    except ValueError:
+        label = EmotionLabel.NEUTRAL
+    try:
+        intensity = float(emotion.get("intensity", 0.4))
+    except (TypeError, ValueError):
+        intensity = 0.4
+    intensity = min(1.0, max(0.0, intensity)) if math.isfinite(intensity) else 0.4
+    return text.strip(), label, intensity
+
+
+SPOKEN_LIMIT = 80
+
+
+def conversational(text, limit=SPOKEN_LIMIT):
+    """Keep a reply to conversational length: whole sentences up to ``limit`` characters.
+
+    The prompt asks for one or two short sentences; this guards against models that ramble.
+    The first sentence is always kept, cut at the limit if it alone is too long.
+    """
+    sentences = re.findall(r"[^。！？!?\n]+[。！？!?]*", text)
+    kept = ""
+    for sentence in (part.strip() for part in sentences):
+        if kept and len(kept) + len(sentence) > limit:
+            break
+        kept += sentence
+    kept = kept or text.strip()
+    return kept if len(kept) <= limit else kept[: limit - 1] + "…"
 
 
 class ModelReplyGenerator:
@@ -50,23 +96,8 @@ class ModelReplyGenerator:
                 raw = response.read(131073)
             if len(raw) > 131072:
                 raise ValueError("oversized response")
-            result = json.loads(json.loads(raw)["choices"][0]["message"]["content"])
-            if set(result) != {"text", "emotion"} or set(result["emotion"]) != {
-                "label",
-                "intensity",
-            }:
-                raise ValueError("unexpected fields")
-            text = result["text"]
-            if not isinstance(text, str) or not 1 <= len(text.strip()) <= 2000:
-                raise ValueError("invalid text")
-            emotion = EmotionLabel(result["emotion"]["label"])
-            intensity = result["emotion"]["intensity"]
-            if (
-                type(intensity) not in (int, float)
-                or not math.isfinite(intensity)
-                or not 0 <= intensity <= 1
-            ):
-                raise ValueError("invalid intensity")
+            content = json.loads(raw)["choices"][0]["message"]["content"]
+            text, emotion, intensity = parse_content(content)
             # A rule-driven notification's expression cannot contradict its lifecycle.
             if prepared.input.proactive and prepared.input.event:
                 emotion = (
@@ -74,7 +105,7 @@ class ModelReplyGenerator:
                     if prepared.input.event.status == "resolved"
                     else EmotionLabel.CONCERNED
                 )
-            return Reply(text.strip(), emotion, intensity, "model", None)
+            return Reply(conversational(text), emotion, intensity, "model", None)
         except (TimeoutError, socket.timeout):
             reason = "model_timeout"
         except (HTTPError, URLError, OSError):

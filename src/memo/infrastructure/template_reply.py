@@ -1,6 +1,18 @@
 from memo.domain.environment import event_words
 from memo.domain.interaction import EmotionLabel, PreparedInteraction, Reply, Tone
 
+LABELS = {
+    "temperature_c": ("溫度", "°C"),
+    "humidity_pct": ("濕度", "%"),
+    "co2_ppm": ("CO₂", " ppm"),
+}
+
+
+def spoken(metrics):
+    return "、".join(
+        f"{LABELS[key][0]} {value:g}{LABELS[key][1]}" for key, value in metrics.items()
+    )
+
 
 class TemplateReplyGenerator:
     """Deterministic preview; does not claim to understand arbitrary user intent."""
@@ -26,8 +38,8 @@ class TemplateReplyGenerator:
             if any(
                 word in request.user_message for word in ("數據", "數值", "幾度", "多少", "ppm")
             ):
-                values = [f"{key}: {value:g}" for key, value in prepared.usable_metrics.items()]
-                return Reply("最近的讀值是 " + "、".join(values) + "。", EmotionLabel.FRIENDLY, 0.4)
+                text = "最近的讀值：" + spoken(prepared.usable_metrics) + "。"
+                return Reply(text, EmotionLabel.FRIENDLY, 0.4)
             if any(word in request.user_message for word in ("環境", "空氣", "溫度", "濕度")):
                 text = (
                     "我有收到空間的新消息，會繼續留意有沒有值得告訴你的變化。你可以先做自己的事。"
@@ -47,21 +59,12 @@ class TemplateReplyGenerator:
         emotion = EmotionLabel.FRIENDLY
         intensity = 0.4
         if prepared.usable_metrics:
-            labels = {
-                "temperature_c": ("溫度", "°C"),
-                "humidity_pct": ("濕度", "%"),
-                "co2_ppm": ("CO₂", " ppm"),
-            }
-            values = [
-                f"{labels[key][0]} {value:g}{labels[key][1]}"
-                for key, value in prepared.usable_metrics.items()
-            ]
             source_label = (
                 "後端儲存的近期讀值為："
                 if prepared.input.context_source == "stored_readings"
                 else "你提供的近期讀值為："
             )
-            parts.append(source_label + "、".join(values) + "。")
+            parts.append(source_label + spoken(prepared.usable_metrics) + "。")
             parts.append("這些數值本身不代表環境已被判定正常或異常。")
         else:
             parts.append("目前沒有可用的近期環境讀值，無法判斷目前環境狀態。")

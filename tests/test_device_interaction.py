@@ -40,6 +40,9 @@ def test_reply_uses_stored_observation(client, age, warning):
     assert reply["context_source"] == "stored_readings"
     assert reply["warnings"] == warning
     assert ("26.5" in reply["text"]) == (not warning)
+    assert "temperature_c" not in reply["text"]
+    if not warning:
+        assert "溫度 26.5°C" in reply["text"]
 
 
 def test_missing_and_forged_context(client):

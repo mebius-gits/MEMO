@@ -7,7 +7,7 @@ import pytest
 
 from memo.application.interaction import InteractionService
 from memo.domain.interaction import InteractionInput, Personality
-from memo.infrastructure.model_reply import ModelReplyGenerator
+from memo.infrastructure.model_reply import ModelReplyGenerator, conversational, parse_content
 from memo.infrastructure.settings import Settings
 
 
@@ -90,3 +90,41 @@ def test_model_failures_are_explicit_fallback(failure, reason):
         service.prepare(InteractionInput("Hi", Personality()), datetime.now(timezone.utc))
     )
     assert result.source == "template" and result.fallback_reason == reason
+
+
+@pytest.mark.parametrize(
+    "content,expected",
+    [
+        (
+            '```json\n{"text": "嗨", "emotion": {"label": "Happy", "intensity": "0.7"}}\n```',
+            ("嗨", "happy", 0.7),
+        ),
+        (
+            '好的：{"text": "嗨", "emotion": {"label": "excited", "intensity": 3}, "extra": 1}',
+            ("嗨", "neutral", 1.0),
+        ),
+        ('{"text": " 嗨 "}', ("嗨", "neutral", 0.4)),
+    ],
+    ids=["fenced-string-intensity", "prose-unknown-label-extra-field", "missing-emotion"],
+)
+def test_lenient_model_output(content, expected):
+    text, label, intensity = parse_content(content)
+    assert (text, label.value, intensity) == expected
+
+
+@pytest.mark.parametrize(
+    "content", ['{"emotion": {"label": "happy"}}', '{"text": ""}', "沒有 JSON"]
+)
+def test_model_output_without_text_is_rejected(content):
+    with pytest.raises(ValueError):
+        parse_content(content)
+
+
+def test_replies_are_kept_to_conversational_length():
+    short = "空氣有點悶。要不要起來走走？"
+    assert conversational(short) == short
+    rambling = "現在溫度 35 度，有點熱。" * 10
+    kept = conversational(rambling)
+    assert kept.endswith("。") and len(kept) <= 80 and kept.startswith("現在溫度 35 度")
+    run_on = "這" * 120
+    assert conversational(run_on) == "這" * 79 + "…"
