@@ -75,7 +75,7 @@ Compose 的 broker 僅將主機 127.0.0.1:1883 對外綁定，目前使用匿名
 
 ## 驗證
 
-2026-10-22 本機驗證結果：42 個 pytest 測試通過；Ruff 與 Alembic schema 檢查通過；Compose YAML 通過官方 JSON Schema 靜態檢查；Aedes 真實 MQTT 傳輸、去重與離線補收測試通過。Windows 與 WSL Ubuntu 均未找到 Docker Engine／CLI，因此 Docker build/start、Mosquitto 容器與 Node-RED 容器仍未實際驗證。
+2026-10-22 驗證結果：42 個 pytest 測試通過；Ruff 與 Alembic schema 檢查通過；Compose YAML 通過官方 JSON Schema 靜態檢查；Aedes 真實 MQTT 傳輸、去重與離線補收測試通過。後續已在 WSL Ubuntu 安裝 Docker Engine，實際 build/start、四個服務健康檢查、Node-RED 預載流程、Mosquitto 訊息落庫及 Worker 離線補收均通過 `verify_docker.py`。Windows 的 localhost:8000 與 localhost:1880 也確認可存取。操作方式見 [WSL Docker](docker-wsl.md)。
 
 完整 Docker smoke test：
 

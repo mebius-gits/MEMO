@@ -103,7 +103,7 @@ BUDDY_DATABASE_URL=postgresql+psycopg://buddy:password@localhost:5432/buddy
 
 ## 下一階段
 
-- Docker／Mosquitto 實際部署驗證與正式設備接入（已提供 broker、獨立 environment-worker、持續模擬器及 smoke scripts）。
+- 正式設備接入與帳號／ACL／TLS（WSL Docker、Mosquitto、Worker 落庫及離線補收已驗證）。
 - 每個指標個別品質判斷、時鐘偏差、最新有效狀態與 stale 偵測。
 - 規則窗口、持續與恢復、事件、outbox 與通知 worker。
 - 持久化人格設定、事件操作、真實 LLM 串接、對話儲存與追蹤排程（已有 LLM 契約及模板預覽）。
