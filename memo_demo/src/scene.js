@@ -2,161 +2,191 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
+// Cartoon handheld companion: stepped toon shading, inverted-hull ink outlines, flat decal buttons.
+const INK = 0x1d2b2f;
+const COLORS = { body: 0x66c7b8, arm: 0x5fb0b4, leg: 0x4f8f99, slot: 0x2c5d59, blue: 0x3a4fb3, yellow: 0xf6d23b, cyan: 0x86d8ec, green: 0x4cc45b, red: 0xe9455a };
+const SCREEN = '#CDEFDB', FACE = '#1D2B2F';
+const W = 2, H = 2.5, D = 1.3, FRONT = D / 2, CENTER = H / 2 + .05;
+
 export function createMemoScene(container) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.35;
+  renderer.toneMapping = THREE.NoToneMapping;
   container.appendChild(renderer.domElement);
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(35, 1, .1, 60);
-  const home = new THREE.Vector3(4.6, 3.5, 8.2);
+  const camera = new THREE.PerspectiveCamera(32, 1, .1, 60);
+  const target = new THREE.Vector3(0, 1.1, .5);
+  const home = new THREE.Vector3(-5.6, 2.8, 8.2);
   camera.position.copy(home);
   const controls = new OrbitControls(camera, renderer.domElement);
-  controls.target.set(0, 1.55, 0);
-  controls.enableDamping = true;
-  controls.enablePan = false;
-  controls.minDistance = 6;
-  controls.maxDistance = 12;
-  controls.minPolarAngle = .65;
-  controls.maxPolarAngle = 1.6;
-  controls.minAzimuthAngle = -1.1;
-  controls.maxAzimuthAngle = 1.1;
-  scene.add(new THREE.HemisphereLight(0xf6ffe3, 0x6a846a, 3));
-  const sun = new THREE.DirectionalLight(0xfff6dc, 4.2);
-  sun.position.set(-3, 7, 5);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  Object.assign(sun.shadow.camera, { left: -5, right: 5, top: 6, bottom: -5, near: .1, far: 20 });
-  sun.shadow.normalBias = .035;
-  sun.shadow.bias = -.0002;
-  sun.shadow.radius = 5;
-  scene.add(sun);
-  const fill = new THREE.DirectionalLight(0xb2e6d1, 1.4);
-  fill.position.set(4, 3, -3);
-  scene.add(fill);
-  const material = (color, roughness = .58) => new THREE.MeshStandardMaterial({ color, roughness });
-  const mint = material(0x54b9a1);
-  const darkMint = material(0x287765);
-  const trim = material(0x226753);
-  const yellow = material(0xf5cf56);
-  const group = new THREE.Group();
-  scene.add(group);
-  function mesh(geometry, mat, x, y, z, parent = group) {
-    const object = new THREE.Mesh(geometry, mat);
+  controls.target.copy(target);
+  Object.assign(controls, { enableDamping: true, enablePan: false, minDistance: 6.5, maxDistance: 13, minPolarAngle: .7, maxPolarAngle: 1.55, minAzimuthAngle: -1.2, maxAzimuthAngle: 1.2 });
+
+  scene.add(new THREE.HemisphereLight(0xffffff, 0xb9d6d2, 1.6));
+  const key = new THREE.DirectionalLight(0xffffff, 1.9);
+  key.position.set(5, 7, 6);
+  scene.add(key);
+
+  const gradient = new THREE.DataTexture(new Uint8Array([110, 190, 255]), 3, 1, THREE.RedFormat);
+  gradient.minFilter = gradient.magFilter = THREE.NearestFilter;
+  gradient.needsUpdate = true;
+  const toon = color => new THREE.MeshToonMaterial({ color, gradientMap: gradient });
+  const ink = new THREE.MeshBasicMaterial({ color: INK });
+  const outlineMaterial = thickness => new THREE.ShaderMaterial({
+    uniforms: { thickness: { value: thickness }, color: { value: new THREE.Color(INK) } },
+    vertexShader: 'uniform float thickness; void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position + normal * thickness, 1.0); }',
+    fragmentShader: 'uniform vec3 color; void main() { gl_FragColor = vec4(color, 1.0); }',
+    side: THREE.BackSide,
+  });
+  const bodyOutline = outlineMaterial(.03), limbOutline = outlineMaterial(.022);
+
+  function mesh(geometry, material, parent, x = 0, y = 0, z = 0, outline) {
+    const object = new THREE.Mesh(geometry, material);
     object.position.set(x, y, z);
-    object.castShadow = true;
-    object.receiveShadow = true;
+    if (outline) object.add(new THREE.Mesh(geometry, outline));
     parent.add(object);
     return object;
   }
-  const box = (w, h, d, radius, mat, x, y, z, parent) => mesh(new RoundedBoxGeometry(w, h, d, 5, radius), mat, x, y, z, parent);
+
+  const root = new THREE.Group();
+  scene.add(root);
   const body = new THREE.Group();
-  group.add(body);
-  box(2.08, 2.62, 1.18, .22, darkMint, 0, 1.98, -.025, body);
-  box(2.01, 2.56, 1.17, .2, mint, 0, 2, .025, body);
-  box(1.74, 1.48, .13, .13, trim, 0, 2.47, .619, body);
+  root.add(body);
+  mesh(new RoundedBoxGeometry(W, H, D, 6, .14), toon(COLORS.body), body, 0, CENTER, 0, bodyOutline);
+
+  // Front decals: an ink rim behind each raised part; extrusion side walls are ink too, so edges stay outlined at any angle.
+  function decal(shapeAt, color, x, y, depth = .05, rim = .028) {
+    mesh(new THREE.ShapeGeometry(shapeAt(rim), 32), ink, body, x, CENTER + y, FRONT + .002);
+    return mesh(new THREE.ExtrudeGeometry(shapeAt(0), { depth, bevelEnabled: false, curveSegments: 32 }), [toon(color), ink], body, x, CENTER + y, FRONT + .003);
+  }
+  const circle = r => grow => new THREE.Shape().absarc(0, 0, r + grow, 0, Math.PI * 2);
+  const pill = (w, h) => grow => {
+    const a = w / 2 + grow, b = h / 2 + grow;
+    const s = new THREE.Shape();
+    s.moveTo(-a + b, -b); s.lineTo(a - b, -b); s.absarc(a - b, 0, b, -Math.PI / 2, Math.PI / 2); s.lineTo(-a + b, b); s.absarc(-a + b, 0, b, Math.PI / 2, Math.PI * 1.5);
+    return s;
+  };
+  const cross = (size, arm) => grow => {
+    const a = size / 2 + grow, b = arm / 2 + grow;
+    return new THREE.Shape([[-b, a], [b, a], [b, b], [a, b], [a, -b], [b, -b], [b, -a], [-b, -a], [-b, -b], [-a, -b], [-a, b], [-b, b]].map(([px, py]) => new THREE.Vector2(px, py)));
+  };
+  const triangle = r => grow => new THREE.Shape([0, 1, 2].map(i => { const angle = Math.PI / 2 + i * Math.PI * 2 / 3, k = r + grow * 2; return new THREE.Vector2(Math.cos(angle) * k, Math.sin(angle) * k * .9); }));
+
+  decal(pill(.98, .085), COLORS.slot, -.17, -.2, .015, .02);
+  decal(circle(.06), COLORS.blue, .7, -.18, .03, .022);
+  decal(cross(.44, .15), COLORS.yellow, -.5, -.6);
+  decal(triangle(.15), COLORS.cyan, .17, -.58);
+  decal(circle(.085), COLORS.green, .67, -.55);
+  decal(circle(.165), COLORS.red, .4, -.88, .06);
+  decal(pill(.25, .065), COLORS.blue, -.58, -1.05, .025, .02);
+  decal(pill(.25, .065), COLORS.blue, -.24, -1.05, .025, .02);
+
+  // Screen: canvas-drawn face with its own ink frame.
   const canvas = document.createElement('canvas');
-  canvas.width = 1024; canvas.height = 840;
+  canvas.width = 1024; canvas.height = 726;
   const ctx = canvas.getContext('2d');
   const faceTexture = new THREE.CanvasTexture(canvas);
   faceTexture.colorSpace = THREE.SRGBColorSpace;
-  const faceMat = new THREE.MeshBasicMaterial({ map: faceTexture, transparent: true });
-  const face = mesh(new THREE.PlaneGeometry(1.61, 1.35), faceMat, 0, 2.47, .698, body);
-  face.castShadow = false;
-  box(1.04, .1, .04, .025, trim, -.18, 1.51, .632, body);
-  function cylinder(radius, depth, mat, x, y, z) {
-    const object = mesh(new THREE.CylinderGeometry(radius, radius, depth, 48), mat, x, y, z, body);
-    object.rotation.x = Math.PI / 2;
-    return object;
-  }
-  function cross(size, depth, mat, z) {
-    const a = size / 2, b = size / 6;
-    const shape = new THREE.Shape();
-    shape.moveTo(-b, a); shape.lineTo(b, a); shape.lineTo(b, b); shape.lineTo(a, b);
-    shape.lineTo(a, -b); shape.lineTo(b, -b); shape.lineTo(b, -a); shape.lineTo(-b, -a);
-    shape.lineTo(-b, -b); shape.lineTo(-a, -b); shape.lineTo(-a, b); shape.lineTo(-b, b);
-    shape.closePath();
-    mesh(new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: true, bevelSegments: 3, steps: 1, bevelSize: .015, bevelThickness: .015 }), mat, -.56, 1.16, z, body);
-  }
-  cross(.53, .05, material(0x8c9042), .625);
-  cross(.44, .06, yellow, .69);
-  cylinder(.128, .06, trim, .67, 1.24, .64);
-  cylinder(.105, .07, material(0x88b94c), .67, 1.24, .69);
-  cylinder(.15, .06, trim, .51, .91, .64);
-  cylinder(.128, .08, material(0xe77966), .51, .91, .70);
-  const triangle = new THREE.Shape();
-  triangle.moveTo(0, .15); triangle.lineTo(-.145, -.12); triangle.lineTo(.145, -.12); triangle.closePath();
-  mesh(new THREE.ExtrudeGeometry(triangle, { depth: .065, bevelEnabled: true, bevelSize: .018, bevelThickness: .015, bevelSegments: 3 }), material(0x7cbecb), .22, 1.22, .66, body);
-  box(.22, .055, .04, .02, trim, -.53, .82, .64, body);
-  box(.22, .055, .04, .02, trim, -.20, .82, .64, body);
-  const badge = document.createElement('canvas'); badge.width = 400; badge.height = 100;
-  const bc = badge.getContext('2d'); bc.fillStyle = '#286f5c'; bc.font = '600 40px sans-serif'; bc.textAlign = 'center'; bc.fillText('M E M O', 200, 62);
-  const badgeTexture = new THREE.CanvasTexture(badge); badgeTexture.colorSpace = THREE.SRGBColorSpace;
-  const logo = mesh(new THREE.PlaneGeometry(.57, .14), new THREE.MeshBasicMaterial({ map: badgeTexture, transparent: true }), 0, .73, .641, body);
-  logo.castShadow = false;
-  for (let row = 0; row < 3; row++) for (let col = 0; col < 2; col++) {
-    const dot = mesh(new THREE.CircleGeometry(.036, 16), trim, 1.045, 2.5 - row * .16, -.13 + col * .24, body);
-    dot.rotation.y = Math.PI / 2;
-  }
-  function limb(points, radius, mat) {
+  faceTexture.anisotropy = 4;
+  mesh(new THREE.PlaneGeometry(1.56, 1.106), new THREE.MeshBasicMaterial({ map: faceTexture, transparent: true }), body, 0, CENTER + .52, FRONT + .004);
+
+  // Left side: speaker holes and vertical lettering.
+  const side = new THREE.Group();
+  side.position.set(-W / 2 - .004, CENTER, 0);
+  side.rotation.y = -Math.PI / 2;
+  body.add(side);
+  for (const [z, y] of [[-.2, 1.0], [.16, 1.02], [-.36, .84], [0, .87], [.32, .82], [-.16, .69], [.18, .67]]) mesh(new THREE.CircleGeometry(.045, 20), ink, side, z, y, 0);
+  const letters = document.createElement('canvas');
+  letters.width = 1024; letters.height = 300;
+  const lc = letters.getContext('2d');
+  lc.fillStyle = FACE; lc.font = '900 250px "Arial Black", "Helvetica Neue", sans-serif'; lc.textAlign = 'center'; lc.textBaseline = 'middle';
+  lc.letterSpacing = '30px'; lc.fillText('MEMO', 512, 160);
+  const lettersTexture = new THREE.CanvasTexture(letters);
+  lettersTexture.colorSpace = THREE.SRGBColorSpace;
+  const lettering = mesh(new THREE.PlaneGeometry(1.5, .44), new THREE.MeshBasicMaterial({ map: lettersTexture, transparent: true }), side, 0, -.14, 0);
+  lettering.rotation.z = -Math.PI / 2;
+
+  // Limbs: thin capsules with rounded ends; legs stretch forward on the floor, hands rest beside the body.
+  function limb(points, radius, color) {
     const curve = new THREE.CatmullRomCurve3(points.map(p => new THREE.Vector3(...p)));
-    return mesh(new THREE.TubeGeometry(curve, 24, radius, 12, false), mat, 0, 0, 0);
+    const material = toon(color);
+    mesh(new THREE.TubeGeometry(curve, 40, radius, 16, false), material, root, 0, 0, 0, limbOutline);
+    mesh(new THREE.SphereGeometry(radius, 16, 12), material, root, ...points[0]);
+    return material;
   }
+  const feet = [];
   for (const sign of [-1, 1]) {
-    limb([[sign * .53, .73, .2], [sign * .59, .33, .57], [sign * .67, .24, 1.04]], .105, darkMint);
-    const shoe = box(.36, .28, .65, .12, darkMint, sign * .67, .27, 1.13);
-    shoe.rotation.y = sign * -.15;
-    box(.33, .37, .24, .1, darkMint, sign * .67, .36, 1.35);
-    limb([[sign * 1.01, 1.47, .05], [sign * 1.22, .88, .29], [sign * 1.36, .29, .80]], .077, mint);
-    const hand = mesh(new THREE.SphereGeometry(.15, 24, 20), mint, sign * 1.36, .24, .85);
-    hand.scale.set(.82, .5, 1.2);
-    for (let i = 0; i < 3; i++) {
-      limb([[sign * (1.28 + i * .07), .24, .89], [sign * (1.3 + i * .07), .2, 1.01]], .027, mint);
+    const legMaterial = limb([[sign * .45, .16, 0], [sign * .47, .11, .7], [sign * .52, .1, 1.45], [sign * .56, .16, 1.88]], .09, COLORS.leg);
+    const foot = mesh(new THREE.SphereGeometry(.11, 24, 16), legMaterial, root, sign * .57, .2, 1.92, limbOutline);
+    foot.scale.set(1, 1.35, 1.1); feet.push(foot);
+    const armMaterial = limb([[sign * (W / 2 - .02), 1.05, .15], [sign * 1.2, .82, .3], [sign * 1.3, .4, .55], [sign * 1.34, .14, .8]], .075, COLORS.arm);
+    const hand = mesh(new THREE.SphereGeometry(.12, 24, 16), armMaterial, root, sign * 1.36, .1, .88, limbOutline);
+    hand.scale.set(1, .5, 1.2);
+    for (const spread of [-.6, 0, .6]) {
+      const finger = mesh(new THREE.CapsuleGeometry(.03, .08, 4, 10), armMaterial, root, sign * 1.36 + Math.sin(spread) * .15, .07, .88 + Math.cos(spread) * .15, limbOutline);
+      finger.rotation.set(Math.PI / 2, 0, -spread);
     }
   }
-  const floor = mesh(new THREE.PlaneGeometry(200, 200), new THREE.ShadowMaterial({ opacity: .12 }), 0, .006, 0, scene);
-  floor.rotation.x = -Math.PI / 2; floor.castShadow = false;
-  const platform = mesh(new THREE.CylinderGeometry(2.15, 2.18, .1, 96), material(0xd8e0c9, .95), 0, .06, .12, scene);
-  platform.castShadow = false;
+
+  // Soft cartoon contact shadow.
+  const blob = document.createElement('canvas');
+  blob.width = blob.height = 256;
+  const bctx = blob.getContext('2d');
+  const shade = bctx.createRadialGradient(128, 128, 10, 128, 128, 128);
+  shade.addColorStop(0, 'rgba(29,43,47,.32)'); shade.addColorStop(.6, 'rgba(29,43,47,.14)'); shade.addColorStop(1, 'rgba(29,43,47,0)');
+  bctx.fillStyle = shade; bctx.fillRect(0, 0, 256, 256);
+  const shadow = mesh(new THREE.PlaneGeometry(3.9, 3.4), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(blob), transparent: true, depthWrite: false }), scene, 0, .002, .6);
+  shadow.rotation.x = -Math.PI / 2;
+
   let mood = 'neutral', intensity = .4, paused = matchMedia('(prefers-reduced-motion: reduce)').matches;
   let lastFace = '', frameId;
   function drawFace(blink) {
-    const key = `${mood}-${blink}`;
-    if (lastFace === key) return;
-    lastFace = key;
-    ctx.clearRect(0, 0, 1024, 840);
-    ctx.fillStyle = '#cbe9ca'; ctx.beginPath(); ctx.roundRect(0, 0, 1024, 840, 70); ctx.fill();
-    ctx.strokeStyle = '#254e3d'; ctx.fillStyle = '#254e3d'; ctx.lineWidth = 26; ctx.lineCap = 'round';
-    for (const x of [320, 700]) {
-      ctx.beginPath();
-      if (blink || mood === 'happy') {
-        ctx.moveTo(x - 32, 350); ctx.quadraticCurveTo(x, mood === 'happy' ? 300 : 353, x + 32, 350); ctx.stroke();
-      } else { ctx.ellipse(x, 350, 35, mood === 'confused' && x === 700 ? 32 : 43, 0, 0, Math.PI * 2); ctx.fill(); }
+    const faceKey = `${mood}-${blink}`;
+    if (lastFace === faceKey) return;
+    lastFace = faceKey;
+    ctx.clearRect(0, 0, 1024, 726);
+    ctx.fillStyle = SCREEN; ctx.strokeStyle = FACE; ctx.lineWidth = 26;
+    ctx.beginPath(); ctx.roundRect(14, 14, 996, 698, 64); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = FACE; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    const eyeY = 300;
+    for (const x of [330, 694]) {
+      ctx.beginPath(); ctx.lineWidth = 20;
+      if (blink) { ctx.moveTo(x - 30, eyeY + 6); ctx.lineTo(x + 30, eyeY + 6); ctx.stroke(); }
+      else if (mood === 'happy') { ctx.moveTo(x - 36, eyeY + 16); ctx.quadraticCurveTo(x, eyeY - 38, x + 36, eyeY + 16); ctx.stroke(); }
+      else { ctx.ellipse(x, eyeY, 30, mood === 'confused' && x > 512 ? 24 : 42, 0, 0, Math.PI * 2); ctx.fill(); }
     }
     if (mood === 'concerned') {
-      ctx.lineWidth = 17; ctx.beginPath(); ctx.moveTo(270, 264); ctx.lineTo(350, 242); ctx.moveTo(672, 242); ctx.lineTo(752, 264); ctx.stroke();
+      ctx.lineWidth = 16; ctx.beginPath();
+      ctx.moveTo(280, 228); ctx.lineTo(360, 210); ctx.moveTo(664, 210); ctx.lineTo(744, 228); ctx.stroke();
     }
-    ctx.lineWidth = 24; ctx.beginPath();
-    if (mood === 'confused') { ctx.arc(512, 505, 35, 0, Math.PI * 2); }
-    else if (mood === 'concerned') { ctx.moveTo(435, 525); ctx.quadraticCurveTo(512, 470, 585, 525); }
-    else { ctx.moveTo(365, 505); ctx.quadraticCurveTo(512, mood === 'happy' ? 680 : 625, 660, 505); }
-    ctx.stroke();
     if (mood === 'friendly' || mood === 'happy') {
-      ctx.fillStyle = '#e9b9a19c';
-      for (const x of [225, 805]) { ctx.beginPath(); ctx.ellipse(x, 460, 47, 22, 0, 0, Math.PI * 2); ctx.fill(); }
+      ctx.fillStyle = 'rgba(240, 140, 150, .45)';
+      for (const x of [230, 794]) { ctx.beginPath(); ctx.ellipse(x, 400, 48, 24, 0, 0, Math.PI * 2); ctx.fill(); }
+      ctx.fillStyle = FACE;
     }
+    ctx.beginPath(); ctx.lineWidth = 14;
+    if (mood === 'happy') {
+      const mouth = new Path2D('M420 420 L604 420 C604 560 420 560 420 420 Z');
+      ctx.fillStyle = '#2E6B3C'; ctx.fill(mouth);
+      ctx.save(); ctx.clip(mouth); ctx.fillStyle = '#7CD06D'; ctx.beginPath(); ctx.ellipse(512, 535, 70, 46, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+      ctx.stroke(mouth);
+    } else if (mood === 'confused') { ctx.arc(530, 455, 28, 0, Math.PI * 2); ctx.stroke(); }
+    else if (mood === 'concerned') { ctx.moveTo(452, 470); ctx.quadraticCurveTo(512, 425, 572, 470); ctx.stroke(); }
+    else { const wide = mood === 'friendly' ? 110 : 82; ctx.moveTo(512 - wide, 420); ctx.quadraticCurveTo(512, mood === 'friendly' ? 520 : 495, 512 + wide, 420); ctx.stroke(); }
     faceTexture.needsUpdate = true;
   }
+
   let elapsed = 0, previous = performance.now();
   function animate(now) {
     const delta = Math.min((now - previous) / 1000, .05); previous = now;
     if (!paused && !document.hidden) elapsed += delta;
-    body.position.y = paused ? 0 : Math.sin(elapsed * 1.7) * .016;
-    body.rotation.z = mood === 'confused' ? -.065 : Math.sin(elapsed * .7) * .006 * intensity;
-    drawFace(!paused && elapsed % 5 > 4.8);
+    const breath = paused ? 0 : Math.sin(elapsed * 1.7);
+    const bounce = mood === 'happy' && !paused ? Math.abs(Math.sin(elapsed * 4)) * .05 : 0;
+    body.position.y = breath * .018 + bounce;
+    body.scale.set(1 - breath * .006, 1 + breath * .008, 1);
+    body.rotation.z = mood === 'confused' ? -.07 : Math.sin(elapsed * .7) * .008 * intensity;
+    feet.forEach((foot, i) => { foot.rotation.x = paused ? 0 : Math.sin(elapsed * 2.2 + i * 1.4) * .12 * (mood === 'happy' ? 2 : 1); });
+    drawFace(!paused && elapsed % 5 > 4.82);
     controls.update(); renderer.render(scene, camera);
     frameId = requestAnimationFrame(animate);
   }
@@ -172,7 +202,7 @@ export function createMemoScene(container) {
     setEmotion(label, amount) { mood = label; intensity = amount; },
     toggleMotion() { paused = !paused; return paused; },
     get paused() { return paused; },
-    reset() { camera.position.copy(home); controls.target.set(0, 1.55, 0); controls.update(); },
+    reset() { camera.position.copy(home); controls.target.copy(target); controls.update(); },
     dispose() { cancelAnimationFrame(frameId); observer.disconnect(); controls.dispose(); renderer.dispose(); }
   };
 }
