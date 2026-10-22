@@ -8,7 +8,6 @@ const ICONS = {
   wind: '<path d="M3 9h11a3 3 0 1 0-3-3M3 14h15a3 3 0 1 1-3 3M3 19h7"/>',
   chat: '<path d="M4 5h16v11H9l-5 4z"/>',
   sliders: '<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>',
-  refresh: '<path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/>',
   replay: '<path d="M4 12a8 8 0 1 0 3-6.2M4 4v5h5"/>',
   pause: '<path d="M9 5v14M15 5v14"/>',
   play: '<path d="M7 4l13 8-13 8z"/>',
@@ -17,10 +16,11 @@ const ICONS = {
 const icon = name => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]}</svg>`;
 const AVATAR = '<svg viewBox="-6 -6 192 222" aria-hidden="true"><rect width="180" height="206" rx="22" fill="#69CDB4" stroke="#0F2F2A" stroke-width="10"/><rect x="18" y="18" width="144" height="104" rx="10" fill="#C4F0DB" stroke="#0F2F2A" stroke-width="8"/><circle cx="66" cy="64" r="10" fill="#12332C"/><circle cx="114" cy="64" r="10" fill="#12332C"/><path d="M68 88 Q90 106 112 88" fill="none" stroke="#12332C" stroke-width="8" stroke-linecap="round"/><rect x="40" y="150" width="34" height="12" rx="4" fill="#F4D03F"/><circle cx="140" cy="158" r="12" fill="#E4574E"/></svg>';
 for (const el of document.querySelectorAll('[data-icon]')) el.innerHTML = icon(el.dataset.icon);
-for (const [id, name] of [['refresh-data', 'refresh'], ['reset-camera', 'replay'], ['pause-motion', 'pause'], ['send-message', 'send']]) $(`#${id}`).innerHTML = icon(name);
+for (const [id, name] of [['reset-camera', 'replay'], ['pause-motion', 'pause'], ['send-message', 'send']]) $(`#${id}`).innerHTML = icon(name);
 const storage = { get(key) { try { return localStorage.getItem(key); } catch { return null; } }, set(key, value) { try { localStorage.setItem(key, value); } catch { /* Private browsers may block storage. */ } } };
 // Backend origin comes only from VITE_API_URL (read when Vite starts or builds).
-let apiBase = (import.meta.env.VITE_API_URL || '').trim(), activeDevice = '', readings = [], devices = [];
+// The page follows the device Node-RED is sending for; room01 until Node-RED reports otherwise.
+let apiBase = (import.meta.env.VITE_API_URL || '').trim(), activeDevice = 'room01', readings = [];
 let refreshing = false, chatting = false, generation = 0, toastTimer, connected = false;
 const sessionId = storage.get('memo.sessionId') || crypto.randomUUID();
 storage.set('memo.sessionId', sessionId);
@@ -95,24 +95,21 @@ async function refresh(showErrors = false) {
   if (!apiBase || refreshing) return;
   refreshing = true; const currentGeneration = generation;
   try {
-    const result = await request('/api/v1/devices?limit=500');
-    if (currentGeneration !== generation) return;
-    devices = result;
-    if (!devices.some(d => d.id === activeDevice)) activeDevice = devices.find(d => d.id === 'room01')?.id || devices[0]?.id || '';
-    $('#device').replaceChildren();
-    if (!devices.length) $('#device').add(new Option('尚無裝置 · 可試用模擬工具', ''));
-    for (const device of devices) $('#device').add(new Option(`${device.name} · ${device.id}`, device.id));
-    $('#device').value = activeDevice;
     const selected = activeDevice;
-    const resultReadings = selected ? await request(`/api/v1/devices/${encodeURIComponent(selected)}/readings?limit=24`) : [];
+    let resultReadings;
+    try { resultReadings = await request(`/api/v1/devices/${encodeURIComponent(selected)}/readings?limit=24`); }
+    catch (error) {
+      // The device registers itself on its first sample; until then there is simply nothing to show.
+      if (error.status !== 404) throw error;
+      if (currentGeneration === generation) { readings = []; connection(true, '已連接後端'); renderReadings(); }
+      return;
+    }
     if (currentGeneration !== generation || selected !== activeDevice) return;
     readings = resultReadings; connection(true, '已連接後端'); renderReadings();
-    if (selected) await syncCompanion(selected, currentGeneration);
+    await syncCompanion(selected, currentGeneration);
   } catch (error) { if (currentGeneration !== generation) return; connection(false, '後端連線中斷'); $('#freshness').classList.remove('live'); $('#freshness').textContent = '連線中斷'; if (showErrors) toast(error.message); }
   finally { refreshing = false; }
 }
-$('#device').onchange = () => { activeDevice = $('#device').value; generation++; readings = []; renderReadings(); refresh(true); };
-$('#refresh-data').onclick = () => refresh(true);
 const missingApi = () => { if (!apiBase) toast('尚未設定 VITE_API_URL，請設定後重新啟動 Vite。'); return !apiBase; };
 
 function message(text, kind) {
@@ -123,19 +120,36 @@ function message(text, kind) {
   if (kind === 'memo' && $('#panel-chat').hidden) $('#chat-badge').hidden = false;
   return row;
 }
+// Persona presets: tone drives the fallback templates; the description is what the model plays.
+const PERSONAS = {
+  companion: { tone: 'gentle', text: '溫柔安靜的桌上小夥伴，說話輕柔，先關心你的感受。' },
+  duty: { tone: 'concise', text: '冷靜的值班員，簡短直接，先講現況，再提醒該留意什麼。' },
+  friend: { tone: 'lively', text: '愛吐槽的損友，語氣輕鬆幽默，但該提醒的一定講到。' },
+  coach: { tone: 'lively', text: '有精神的教練，常給你打氣，督促你照顧好自己。' },
+  custom: { tone: 'gentle', text: '' },
+};
+const persona = { id: 'companion', custom: '' };
+try { Object.assign(persona, JSON.parse(storage.get('memo.persona')) || {}); } catch { /* Ignore an unreadable saved persona. */ }
+if (!PERSONAS[persona.id]) persona.id = 'companion';
+const personaText = () => persona.id === 'custom' ? persona.custom : PERSONAS[persona.id].text;
+const personality = () => ({ tone: PERSONAS[persona.id].tone, persona: personaText().trim() });
+function renderPersona() { $(`input[name="persona"][value="${persona.id}"]`).checked = true; $('#persona-text').value = personaText(); storage.set('memo.persona', JSON.stringify(persona)); }
+document.querySelectorAll('input[name="persona"]').forEach(input => { input.onchange = () => { persona.id = input.value; renderPersona(); }; });
+// Editing a preset's description turns it into the custom persona.
+$('#persona-text').oninput = event => { persona.custom = event.target.value; if (persona.id !== 'custom') { persona.id = 'custom'; $('input[name="persona"][value="custom"]').checked = true; } storage.set('memo.persona', JSON.stringify(persona)); };
+renderPersona();
 const moodLabels = { neutral: '安靜陪伴', friendly: '溫柔陪伴', happy: '開心', concerned: '有點關心', confused: '還想多了解' };
 const moodFaces = { neutral: '◡', friendly: '◡', happy: '▽', concerned: '︵', confused: '?' };
 const chips = () => document.querySelectorAll('.chip');
 async function chat(text) {
   if (chatting) return;
   if (missingApi()) return;
-  if (!activeDevice) { toast('請先選擇裝置，或送出一筆模擬讀值。'); return; }
   const selected = activeDevice, currentGeneration = generation;
   chatting = true; $('#send-message').disabled = true; chips().forEach(chip => { chip.disabled = true; });
   message(text, 'user'); $('#chat-input').value = '';
   const waiting = message('讓我看看你空間裡的資料…', 'memo waiting');
   try {
-    const reply = await request(`/api/v1/devices/${encodeURIComponent(selected)}/interaction`, { method: 'POST', body: JSON.stringify({ session_id: sessionId, request_id: crypto.randomUUID(), user_message: text, personality: { tone: $('input[name="tone"]:checked').value } }) });
+    const reply = await request(`/api/v1/devices/${encodeURIComponent(selected)}/interaction`, { method: 'POST', body: JSON.stringify({ session_id: sessionId, request_id: crypto.randomUUID(), user_message: text, personality: personality() }) });
     waiting.remove();
     if (generation !== currentGeneration) { message('裝置已切換，已略過上一個裝置的回覆。', 'memo'); return; }
     message(reply.text, 'memo');
@@ -145,22 +159,46 @@ async function chat(text) {
 }
 $('#chat-form').onsubmit = event => { event.preventDefault(); const text = $('#chat-input').value.trim(); if (text) { selectTab('chat'); chat(text); } };
 chips().forEach(chip => { chip.onclick = () => { selectTab('chat'); chat(chip.dataset.prompt); }; });
-for (const [name, unit] of [['temperature', '°C'], ['humidity', '%'], ['co2', 'ppm']]) $(`#sim-${name}`).oninput = e => { $(`#sim-${name}-output`).textContent = `${e.target.value} ${unit}`; };
-$('#publish-simulation').onclick = async () => {
-  if (missingApi()) return;
-  const button = $('#publish-simulation'); button.disabled = true;
-  const startGeneration = generation;
+// Node-RED keeps sending drifting readings; this panel only adds or clears disturbance offsets there.
+const nodeRedBase = (import.meta.env.VITE_NODE_RED_URL || '').trim().replace(/\/$/, '');
+const offsetInputs = [...document.querySelectorAll('[data-offset]')];
+let offsetsEdited = false, nodeRed = null;
+function showOffset(input) { const value = Number(input.value); $(`#${input.id}-output`).textContent = `${value > 0 ? '+' : ''}${value} ${input.dataset.unit}`; }
+offsetInputs.forEach(input => { input.oninput = () => { offsetsEdited = true; showOffset(input); }; });
+async function disturbance(body) {
+  if (!nodeRedBase) throw new Error('尚未設定 VITE_NODE_RED_URL。');
+  // text/plain keeps the POST a simple CORS request, so Node-RED needs no preflight handling.
+  const options = body ? { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(body) } : {};
+  let response;
+  try { response = await fetch(`${nodeRedBase}/memo/disturbance`, { ...options, signal: AbortSignal.timeout(8000) }); }
+  catch { throw new Error('無法連接 Node-RED。請確認容器已啟動，且 CORS_ORIGINS 包含本網站。'); }
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error || `Node-RED 回應錯誤（${response.status}）。`);
+  return result;
+}
+function renderDisturbance(state) {
+  nodeRed = state;
+  const toggle = $('#node-red-toggle');
+  toggle.disabled = !state; toggle.setAttribute('aria-pressed', String(Boolean(state?.enabled)));
+  toggle.textContent = !state ? (nodeRedBase ? '未連線' : '未設定') : state.enabled ? '傳送中' : '已暫停';
+  toggle.title = state ? (state.enabled ? '暫停 Node-RED 傳送' : '恢復 Node-RED 傳送') : '';
+  $('#apply-disturbance').disabled = $('#reset-disturbance').disabled = !state;
+  if (state && state.device_id !== activeDevice) { activeDevice = state.device_id; generation++; readings = []; renderReadings(); refresh(); }
+  if (state && !offsetsEdited) offsetInputs.forEach(input => { input.value = state.anomaly_offset[input.dataset.offset] || 0; showOffset(input); });
+}
+async function syncDisturbance() {
+  if (!nodeRedBase) return renderDisturbance(null);
+  try { renderDisturbance(await disturbance()); } catch { renderDisturbance(null); }
+}
+async function changeDisturbance(body, note) {
   try {
-    try { await request('/api/v1/devices', { method: 'POST', body: JSON.stringify({ id: 'memo-web-demo', name: 'MEMO 網頁模擬', location: '獨立示範空間' }) }); }
-    catch (error) { if (error.status !== 409) throw error; }
-    if (startGeneration !== generation) return;
-    await request('/api/v1/telemetry', { method: 'POST', body: JSON.stringify({ schema_version: 1, message_id: `web-${crypto.randomUUID()}`, device_id: 'memo-web-demo', observed_at: new Date().toISOString(), sequence: 1, quality: 'ok', metrics: { temperature_c: Number($('#sim-temperature').value), humidity_pct: Number($('#sim-humidity').value), co2_ppm: Number($('#sim-co2').value) } }) });
-    if (startGeneration !== generation) return;
-    activeDevice = 'memo-web-demo'; generation++; await refresh();
-    toast('模擬讀值已寫入後端。'); await chat('MEMO，請摘要剛剛的模擬環境資料。');
+    const state = await disturbance(body);
+    offsetsEdited = false; renderDisturbance(state); toast(note);
   } catch (error) { toast(error.message); }
-  finally { button.disabled = false; }
-};
+}
+$('#apply-disturbance').onclick = () => changeDisturbance({ offsets: Object.fromEntries(offsetInputs.map(input => [input.dataset.offset, Number(input.value)])) }, '已套用干擾，數值會在幾筆資料內逐步變化。');
+$('#reset-disturbance').onclick = () => changeDisturbance({ reset: true }, '已恢復正常，數值會逐步回到平常範圍。');
+$('#node-red-toggle').onclick = () => changeDisturbance({ enabled: !nodeRed?.enabled }, nodeRed?.enabled ? '已暫停 Node-RED 傳送。' : '已恢復 Node-RED 傳送。');
 function showEmotion(emotion) {
   $('#mood-label').textContent = moodLabels[emotion.label] || moodLabels.neutral;
   $('#mood-face').textContent = moodFaces[emotion.label] || moodFaces.neutral;
@@ -192,5 +230,6 @@ if (apiBase) {
   try { apiBase = normalizeUrl(apiBase); refresh(); }
   catch (error) { apiBase = ''; connection(false, 'VITE_API_URL 無效'); toast(error.message); }
 } else connection(false, '未設定 VITE_API_URL');
-const interval = setInterval(() => { if (!document.hidden) refresh(); }, 5000);
+syncDisturbance();
+const interval = setInterval(() => { if (!document.hidden) { refresh(); syncDisturbance(); } }, 5000);
 window.addEventListener('pagehide', () => { clearInterval(interval); companion?.dispose(); });

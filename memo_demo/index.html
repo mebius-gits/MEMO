@@ -43,25 +43,25 @@
 
         <div id="panel-params" class="panel params" role="tabpanel" aria-labelledby="tab-params" hidden>
           <section class="group">
-            <h3>感測裝置</h3>
-            <div class="device-row"><label class="sr-only" for="device">選擇感測裝置</label><select id="device"><option value="">尚未連接裝置</option></select><button id="refresh-data" class="icon-button" aria-label="重新整理資料" title="重新整理資料"></button></div>
-          </section>
-          <section class="group">
-            <h3>MEMO 語氣</h3>
-            <div class="seg" role="radiogroup" aria-label="MEMO 語氣">
-              <label><input type="radio" name="tone" value="gentle" checked /><span>溫柔</span></label>
-              <label><input type="radio" name="tone" value="lively" /><span>活潑</span></label>
-              <label><input type="radio" name="tone" value="concise" /><span>簡潔</span></label>
+            <h3>人格設定</h3>
+            <div class="seg personas" role="radiogroup" aria-label="人格設定">
+              <label><input type="radio" name="persona" value="companion" checked /><span>陪伴者</span></label>
+              <label><input type="radio" name="persona" value="duty" /><span>值班員</span></label>
+              <label><input type="radio" name="persona" value="friend" /><span>損友</span></label>
+              <label><input type="radio" name="persona" value="coach" /><span>教練</span></label>
+              <label><input type="radio" name="persona" value="custom" /><span>自訂</span></label>
             </div>
+            <label class="sr-only" for="persona-text">人格描述</label>
+            <textarea id="persona-text" rows="3" maxlength="300" placeholder="描述 MEMO 的角色與說話方式，例如：講話像老派管家，有禮但會碎念。"></textarea>
           </section>
           <section class="group">
-            <h3>模擬讀值</h3>
+            <h3>環境干擾<button id="node-red-toggle" class="state-toggle" type="button" aria-pressed="false" disabled>未連線</button></h3>
             <div class="sliders">
-              <label><span>溫度</span><output id="sim-temperature-output">26 °C</output><input id="sim-temperature" type="range" min="10" max="40" step="0.5" value="26" /></label>
-              <label><span>濕度</span><output id="sim-humidity-output">60 %</output><input id="sim-humidity" type="range" min="10" max="95" value="60" /></label>
-              <label><span>CO₂</span><output id="sim-co2-output">800 ppm</output><input id="sim-co2" type="range" min="400" max="2500" step="50" value="800" /></label>
+              <label><span>溫度</span><output id="dist-temperature_c-output">0 °C</output><input id="dist-temperature_c" data-offset="temperature_c" data-unit="°C" type="range" min="-5" max="10" step="0.5" value="0" /></label>
+              <label><span>濕度</span><output id="dist-humidity_pct-output">0 %</output><input id="dist-humidity_pct" data-offset="humidity_pct" data-unit="%" type="range" min="-25" max="30" step="1" value="0" /></label>
+              <label><span>CO₂</span><output id="dist-co2_ppm-output">0 ppm</output><input id="dist-co2_ppm" data-offset="co2_ppm" data-unit="ppm" type="range" min="-200" max="1500" step="50" value="0" /></label>
             </div>
-            <button id="publish-simulation" class="btn primary wide">送出模擬讀值</button>
+            <div class="actions"><button id="apply-disturbance" class="btn primary" disabled>套用干擾</button><button id="reset-disturbance" class="btn" disabled>恢復正常</button></div>
           </section>
         </div>
 
