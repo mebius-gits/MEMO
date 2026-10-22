@@ -50,8 +50,9 @@ tts = sherpa_onnx.OfflineTts(
 )
 # SenseVoice writes Simplified Chinese; Kokoro's lexicon only knows Simplified characters.
 to_traditional, to_simplified = OpenCC("s2twp"), OpenCC("tw2sp")
-# The ONNX runtimes are shared; serialise calls rather than rely on undocumented thread safety.
-lock = threading.Lock()
+# Each ONNX runtime is shared; serialise its calls rather than rely on undocumented thread
+# safety. Separate locks, so recognising the user never queues behind a long synthesis.
+stt_lock, tts_lock = threading.Lock(), threading.Lock()
 
 app = FastAPI(title="MEMO speech", version="0.1.0")
 app.add_middleware(
@@ -126,7 +127,7 @@ async def speech_to_text(request: Request):
     if len(data) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, "音訊檔太大。")
     rate, samples = read_wav(data)
-    with lock:
+    with stt_lock:
         stream = recognizer.create_stream()
         stream.accept_waveform(rate, samples)
         recognizer.decode_stream(stream)
@@ -151,7 +152,7 @@ def text_to_speech(payload: SpeechRequest):
     text = speakable(payload.text)
     if not text:
         raise HTTPException(422, "沒有可以朗讀的文字。")
-    with lock:
+    with tts_lock:
         audio = tts.generate(text, sid=SPEAKER_ID, speed=payload.speed or DEFAULT_SPEED)
     if not len(audio.samples):
         raise HTTPException(500, "語音合成失敗。")

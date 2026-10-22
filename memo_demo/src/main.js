@@ -188,30 +188,39 @@ async function chat(text) {
     if (generation !== currentGeneration) { say('裝置已切換，已略過上一個裝置的回覆。'); return; }
     say(reply.text, { quote: text, voice: true });
     showEmotion(reply.emotion);
-  } catch (error) { say(error.message, { quote: text }); }
+  } catch (error) { say(error.message, { quote: text }); showEmotion({ label: 'error', intensity: .5 }); }
   finally { chatting = false; $('#send-message').disabled = false; chips().forEach(chip => { chip.disabled = false; }); }
 }
-// Mic: click to start, click again (or wait 15 s) to stop; the transcript is sent as a chat message.
+// Mic: click to start. A pause after speaking (or a second click, or 15 s) stops it and sends the
+// transcript as a chat message; silence from the start cancels quietly.
 let recording = null, recordTimer = 0;
 function micState(active) { const label = active ? '停止並送出' : '按一下開始說話'; $('#mic').setAttribute('aria-pressed', String(active)); $('#mic').setAttribute('aria-label', label); $('#mic').title = label; }
 micState(false);
 $('#mic').onclick = async () => {
   if (chatting || !speech) return;
   if (!recording) {
-    try { speech.stop(); recording = await speech.record(); }
-    catch { toast('無法使用麥克風，請允許瀏覽器存取麥克風。'); return; }
-    micState(true); recordTimer = setTimeout(() => { if (recording) $('#mic').click(); }, 15000);
+    try {
+      speech.stop();
+      recording = await speech.record({ onEnd: reason => { if (!recording) return; if (reason === 'silence') $('#mic').click(); else cancelRecording(); } });
+    } catch { toast('無法使用麥克風，請允許瀏覽器存取麥克風。'); return; }
+    micState(true); showEmotion({ label: 'listening', intensity: .5 });
+    recordTimer = setTimeout(() => { if (recording) $('#mic').click(); }, 15000);
     return;
   }
   clearTimeout(recordTimer);
   const current = recording; recording = null; micState(false); $('#mic').disabled = true;
   try {
-    say('聽聽你說了什麼…', { waiting: true });
+    say('聽聽你說了什麼…', { waiting: true }); showEmotion({ label: 'thinking', intensity: .5 });
     const { text } = await speech.transcribe(await current.stop());
-    if (text.trim()) chat(text.trim()); else say('我沒聽清楚，可以再說一次嗎？');
-  } catch (error) { say(error.message); }
+    if (text.trim()) chat(text.trim()); else { say('我沒聽清楚，可以再說一次嗎？'); showEmotion({ label: 'confused', intensity: .4 }); }
+  } catch (error) { say(error.message); showEmotion({ label: 'error', intensity: .5 }); }
   finally { $('#mic').disabled = false; }
 };
+function cancelRecording() {
+  clearTimeout(recordTimer);
+  recording?.cancel(); recording = null; micState(false);
+  say('我沒聽到聲音，想說話時再按一次麥克風。'); showEmotion({ label: 'neutral', intensity: .3 });
+}
 $('#chat-form').onsubmit = event => { event.preventDefault(); const text = $('#chat-input').value.trim(); if (text) chat(text); };
 chips().forEach(chip => { chip.onclick = () => chat(chip.dataset.prompt); });
 // Node-RED keeps sending drifting readings; this panel only adds or clears disturbance offsets there.

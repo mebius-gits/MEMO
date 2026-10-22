@@ -22,7 +22,7 @@ docker compose exec speech python smoke_test.py   # 合成一句話再辨識回�
 | POST | `/stt` | body 為 16-bit PCM WAV（任意取樣率，最長 30 秒、4 MB），回傳 `text`、`language`、`emotion`、`event` |
 | POST | `/tts` | JSON `{"text": "..."}`（最多 500 字，可選 `speed` 0.5–2），回傳 `audio/wav`；頭尾靜音已修剪 |
 
-TTS 前會把 °C、%、CO₂ 等符號轉成念得出的文字，並轉為簡體字（Kokoro 詞典只收簡體）。服務一次處理一個請求。
+TTS 前會把 °C、%、CO₂ 等符號轉成念得出的文字，並轉為簡體字（Kokoro 詞典只收簡體）。辨識與合成各自排隊：MEMO 念長句時，辨識照樣約 0.1 秒完成。
 
 ## 設定
 

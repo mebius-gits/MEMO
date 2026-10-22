@@ -1,6 +1,8 @@
 // Client for the local speech service (SenseVoice STT, Kokoro TTS).
 // Recordings are converted to 16 kHz mono WAV here, so the service needs no audio codecs.
 const RATE = 16000;
+// End-of-speech detection: learn the room's noise first, then a pause this long ends the turn.
+const CALIBRATE_MS = 300, SILENCE_MS = 900, NOTHING_MS = 6000;
 
 function encodeWav(samples) {
   const view = new DataView(new ArrayBuffer(44 + samples.length * 2));
@@ -60,16 +62,40 @@ export function createSpeech(base, onTalking = () => {}) {
       }
       if (mine === token) onTalking(false);
     },
-    async record() {
+    // onEnd('silence') fires once the user has spoken and then paused; onEnd('nothing') when no
+    // speech is heard at all. The caller decides whether to stop and transcribe.
+    async record({ onEnd = () => {} } = {}) {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
       const recorder = new MediaRecorder(stream), chunks = [];
       recorder.ondataavailable = event => chunks.push(event.data);
       recorder.start();
+      const context = new AudioContext(), analyser = context.createAnalyser();
+      analyser.fftSize = 1024;
+      context.createMediaStreamSource(stream).connect(analyser);
+      const frame = new Float32Array(analyser.fftSize), started = performance.now();
+      let calibration = [], threshold = 0.02, heard = false, quietSince = 0, ended = false;
+      const watch = setInterval(() => {
+        analyser.getFloatTimeDomainData(frame);
+        const level = Math.sqrt(frame.reduce((sum, value) => sum + value * value, 0) / frame.length);
+        const now = performance.now();
+        if (now - started < CALIBRATE_MS) { calibration.push(level); return; }
+        if (calibration) {
+          // Speech must clearly exceed the room's own noise; clamp so an early word cannot hide it.
+          const room = calibration.reduce((a, b) => a + b, 0) / Math.max(1, calibration.length);
+          threshold = Math.min(0.06, Math.max(0.012, room * 3)); calibration = null;
+        }
+        if (level > threshold) { heard = true; quietSince = 0; }
+        else if (heard) quietSince ||= now;
+        const reason = heard && quietSince && now - quietSince > SILENCE_MS ? 'silence' : !heard && now - started > NOTHING_MS ? 'nothing' : null;
+        if (reason && !ended) { ended = true; clearInterval(watch); onEnd(reason); }
+      }, 80);
+      const release = () => { clearInterval(watch); context.close().catch(() => {}); stream.getTracks().forEach(track => track.stop()); };
       return {
         stop: () => new Promise((resolve, reject) => {
-          recorder.onstop = () => { stream.getTracks().forEach(track => track.stop()); toWav(new Blob(chunks, { type: recorder.mimeType })).then(resolve, reject); };
+          recorder.onstop = () => { release(); toWav(new Blob(chunks, { type: recorder.mimeType })).then(resolve, reject); };
           recorder.stop();
         }),
+        cancel: () => { recorder.onstop = release; recorder.stop(); },
       };
     },
     async transcribe(wav) { return (await post('/stt', wav, { 'Content-Type': 'audio/wav' })).json(); },
