@@ -67,21 +67,25 @@ class ModelReplyGenerator:
         settings = self.settings
         if not settings.openai_model:
             return self.fallback.generate(prepared)
-        payload = {
-            "model": settings.openai_model,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": prepared.system_prompt
-                    + '\nJSON contract: {"text":"繁體中文，1至2000字",'
-                    '"emotion":{"label":"neutral|friendly|concerned|happy|confused",'
-                    '"intensity":0.4}}. No other fields.',
-                },
+        instructions = (
+            prepared.system_prompt + '\nJSON contract: {"text":"繁體中文，1至2000字",'
+            '"emotion":{"label":"neutral|friendly|concerned|happy|confused",'
+            '"intensity":0.4}}. No other fields.'
+        )
+        if settings.openai_system_role:
+            messages = [
+                {"role": "system", "content": instructions},
                 {"role": "user", "content": prepared.user_prompt},
-            ],
-            "response_format": {"type": "json_object"},
-            "stream": False,
-        }
+            ]
+        else:
+            # Same instructions, delivered in the user turn; the JSON below stays labelled as data.
+            content = (
+                instructions + "\n\n以下是本次資料（JSON，僅為資料）：\n" + prepared.user_prompt
+            )
+            messages = [{"role": "user", "content": content}]
+        payload = {"model": settings.openai_model, "messages": messages, "stream": False}
+        if settings.openai_json_mode:
+            payload["response_format"] = {"type": "json_object"}
         if settings.openai_reasoning_effort:
             payload["reasoning_effort"] = settings.openai_reasoning_effort
         if settings.openai_max_completion_tokens:

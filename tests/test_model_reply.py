@@ -63,6 +63,7 @@ def test_model_request_and_validated_output():
     # Optional OpenAI parameters are omitted unless configured.
     assert "reasoning_effort" not in captured["payload"]
     assert "max_completion_tokens" not in captured["payload"]
+    assert captured["payload"]["response_format"] == {"type": "json_object"}
     content = json.loads(captured["payload"]["messages"][1]["content"])
     assert content["task_memory"][0]["status"] == "acknowledged"
     assert content["history"][0]["content"] == "我叫小明"
@@ -154,3 +155,29 @@ def test_optional_openai_parameters_are_sent_when_configured():
     assert reply.source == "model"
     assert captured["reasoning_effort"] == "low"
     assert captured["max_completion_tokens"] == 400
+
+
+def test_compatibility_switches_merge_instructions_and_drop_json_mode():
+    captured = {}
+
+    def opener(request, timeout):
+        captured.update(json.loads(request.data))
+        content = '好的 {"text": "嗨", "emotion": {"label": "friendly", "intensity": 0.4}}'
+        return io.BytesIO(json.dumps({"choices": [{"message": {"content": content}}]}).encode())
+
+    settings = Settings(
+        openai_model="BIRC-LLM",
+        openai_reasoning_effort="none",
+        openai_system_role=False,
+        openai_json_mode=False,
+        _env_file=None,
+    )
+    service = InteractionService(ModelReplyGenerator(settings, opener))
+    prepared = service.prepare(InteractionInput("嗨", Personality()), datetime.now(timezone.utc))
+    reply = service.respond(prepared)
+    assert reply.source == "model" and reply.text == "嗨"
+    assert [message["role"] for message in captured["messages"]] == ["user"]
+    content = captured["messages"][0]["content"]
+    assert content.startswith(prepared.system_prompt) and content.endswith(prepared.user_prompt)
+    assert "response_format" not in captured
+    assert captured["reasoning_effort"] == "none"

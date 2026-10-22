@@ -9,8 +9,10 @@ OPENAI_API_KEY=
 OPENAI_BASE_URL=http://localhost:11434/v1
 OPENAI_MODEL=你的模型名稱
 OPENAI_TIMEOUT_SECONDS=30
-OPENAI_REASONING_EFFORT=low         # 選填，推理模型降低思考量以加快回覆
+OPENAI_REASONING_EFFORT=low         # 選填，推理模型降低思考量以加快回覆（Gemma 4 可用 none 關閉思考）
 OPENAI_MAX_COMPLETION_TOKENS=400    # 選填，限制單次輸出 token
+OPENAI_SYSTEM_ROLE=true             # 模型不理會 system 角色時設 false，指令改放 user 訊息
+OPENAI_JSON_MODE=true               # JSON 模式回空物件時設 false，改由提示詞要求 JSON
 NOTIFICATIONS_ENABLED=true
 ```
 

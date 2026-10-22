@@ -17,9 +17,13 @@ class Settings(BaseSettings):
     openai_model: str = ""
     openai_timeout_seconds: float = Field(default=30, gt=0, le=300)
     # Optional OpenAI request parameters, sent only when set (some servers reject unknown ones).
-    # Low reasoning effort cuts gpt-oss latency several-fold for short spoken replies.
-    openai_reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = None
+    # Reasoning models spend most of their time thinking; "none"/"low" keeps short replies fast.
+    openai_reasoning_effort: Literal["none", "minimal", "low", "medium", "high"] | None = None
     openai_max_completion_tokens: int | None = Field(default=None, ge=16, le=8192)
+    # Compatibility switches for models/proxies that ignore a system role (e.g. Gemma behind
+    # a proxy that injects its own) or answer "{}" in JSON mode; the prompt still asks for JSON.
+    openai_system_role: bool = True
+    openai_json_mode: bool = True
 
 
 class MqttSettings(BaseSettings):
