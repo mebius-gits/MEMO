@@ -1,0 +1,736 @@
+openapi: 3.1.0
+info:
+  title: MEMO
+  version: 0.1.0
+paths:
+  /api/v1/devices:
+    post:
+      tags:
+      - devices
+      summary: Register Device
+      operationId: register_device_api_v1_devices_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceSchema'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceSchema'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - devices
+      summary: List Devices
+      operationId: list_devices_api_v1_devices_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          default: 100
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DeviceSchema'
+                title: Response List Devices Api V1 Devices Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}:
+    get:
+      tags:
+      - devices
+      summary: Get Device
+      operationId: get_device_api_v1_devices__device_id__get
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceSchema'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/telemetry:
+    post:
+      tags:
+      - telemetry
+      summary: Ingest
+      operationId: ingest_api_v1_telemetry_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelemetryInput'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadingOutput'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/readings:
+    get:
+      tags:
+      - telemetry
+      summary: History
+      operationId: history_api_v1_devices__device_id__readings_get
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      - name: start
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Start
+      - name: end
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: End
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          default: 100
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ReadingOutput'
+                title: Response History Api V1 Devices  Device Id  Readings Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/llm/personality:
+    get:
+      tags:
+      - MEMO interaction
+      summary: 取得 MEMO 預設人格
+      operationId: get_personality_api_v1_llm_personality_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PersonalityConfig'
+  /api/v1/llm/prepare:
+    post:
+      tags:
+      - MEMO interaction
+      summary: 組裝 LLM 輸入與輸出契約（不呼叫模型）
+      operationId: prepare_api_v1_llm_prepare_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InteractionRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreparedResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/llm/respond:
+    post:
+      tags:
+      - MEMO interaction
+      summary: 產生 MEMO 文字與情緒（目前為模板預覽）
+      operationId: respond_api_v1_llm_respond_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InteractionRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InteractionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /health/live:
+    get:
+      tags:
+      - health
+      summary: Live
+      operationId: live_health_live_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /health/ready:
+    get:
+      tags:
+      - health
+      summary: Ready
+      operationId: ready_health_ready_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+components:
+  schemas:
+    DeviceSchema:
+      properties:
+        id:
+          type: string
+          maxLength: 64
+          minLength: 1
+          pattern: ^[a-zA-Z0-9_-]+$
+          title: Id
+        name:
+          type: string
+          maxLength: 100
+          minLength: 1
+          title: Name
+        location:
+          type: string
+          maxLength: 200
+          title: Location
+          default: ''
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      - name
+      title: DeviceSchema
+    EmotionLabel:
+      type: string
+      enum:
+      - neutral
+      - friendly
+      - concerned
+      - happy
+      - confused
+      title: EmotionLabel
+    EmotionOutput:
+      properties:
+        label:
+          $ref: '#/components/schemas/EmotionLabel'
+          description: MEMO 的顯示情緒，不代表使用者情緒或事件嚴重程度。
+        intensity:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Intensity
+          description: 表情強度，0 到 1。
+      additionalProperties: false
+      type: object
+      required:
+      - label
+      - intensity
+      title: EmotionOutput
+    EventInput:
+      properties:
+        event_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          title: Event Id
+        event_version:
+          type: integer
+          minimum: 1.0
+          title: Event Version
+        status:
+          type: string
+          enum:
+          - pending
+          - active
+          - recovering
+          - resolved
+          - unknown
+          title: Status
+        rule_evidence:
+          type: string
+          maxLength: 1000
+          minLength: 1
+          title: Rule Evidence
+          description: 呼叫端提供的規則依據，不是 LLM 自行判斷。
+      additionalProperties: false
+      type: object
+      required:
+      - event_id
+      - event_version
+      - status
+      - rule_evidence
+      title: EventInput
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    HistoryMessage:
+      properties:
+        role:
+          type: string
+          enum:
+          - user
+          - assistant
+          title: Role
+        content:
+          type: string
+          maxLength: 2000
+          minLength: 1
+          title: Content
+      additionalProperties: false
+      type: object
+      required:
+      - role
+      - content
+      title: HistoryMessage
+    InteractionContext:
+      properties:
+        device_id:
+          anyOf:
+          - type: string
+            maxLength: 64
+            minLength: 1
+            pattern: ^[a-zA-Z0-9_-]+$
+          - type: 'null'
+          title: Device Id
+        observation:
+          anyOf:
+          - $ref: '#/components/schemas/ObservationInput'
+          - type: 'null'
+        event:
+          anyOf:
+          - $ref: '#/components/schemas/EventInput'
+          - type: 'null'
+        approved_suggestions:
+          items:
+            type: string
+            maxLength: 300
+            minLength: 1
+          type: array
+          maxItems: 5
+          title: Approved Suggestions
+          description: 呼叫端已核准建議；不代表 API 已驗證。
+      additionalProperties: false
+      type: object
+      title: InteractionContext
+    InteractionRequest:
+      properties:
+        request_id:
+          type: string
+          format: uuid
+          title: Request Id
+          description: 追蹤識別碼；不提供儲存或去重。
+        user_message:
+          type: string
+          maxLength: 2000
+          minLength: 1
+          title: User Message
+          examples:
+          - MEMO，現在環境如何？
+        personality:
+          $ref: '#/components/schemas/PersonalityConfig'
+          description: 僅套用本次請求，不覆寫預設或持久化。
+        context:
+          $ref: '#/components/schemas/InteractionContext'
+        history:
+          items:
+            $ref: '#/components/schemas/HistoryMessage'
+          type: array
+          maxItems: 10
+          title: History
+      additionalProperties: false
+      type: object
+      required:
+      - user_message
+      title: InteractionRequest
+    InteractionResponse:
+      properties:
+        text:
+          type: string
+          maxLength: 2000
+          minLength: 1
+          title: Text
+          description: 顯示給使用者的繁體中文文字。
+        emotion:
+          $ref: '#/components/schemas/EmotionOutput'
+        request_id:
+          type: string
+          format: uuid
+          title: Request Id
+        character:
+          type: string
+          const: MEMO
+          title: Character
+          default: MEMO
+        source:
+          type: string
+          const: template
+          title: Source
+          default: template
+        fallback_reason:
+          type: string
+          const: model_not_configured
+          title: Fallback Reason
+          default: model_not_configured
+        context_source:
+          type: string
+          const: caller_supplied
+          title: Context Source
+          default: caller_supplied
+        event_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Event Id
+        event_version:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Event Version
+        warnings:
+          items:
+            type: string
+            enum:
+            - missing_observation
+            - unreliable_observation
+            - future_observation
+            - stale_observation
+          type: array
+          title: Warnings
+      additionalProperties: false
+      type: object
+      required:
+      - text
+      - emotion
+      - request_id
+      - warnings
+      title: InteractionResponse
+    Metrics:
+      properties:
+        temperature_c:
+          anyOf:
+          - type: number
+            maximum: 100.0
+            minimum: -80.0
+          - type: 'null'
+          title: Temperature C
+        humidity_pct:
+          anyOf:
+          - type: number
+            maximum: 100.0
+            minimum: 0.0
+          - type: 'null'
+          title: Humidity Pct
+        co2_ppm:
+          anyOf:
+          - type: number
+            maximum: 100000.0
+            minimum: 0.0
+          - type: 'null'
+          title: Co2 Ppm
+      additionalProperties: false
+      type: object
+      title: Metrics
+    ObservationInput:
+      properties:
+        observed_at:
+          type: string
+          format: date-time
+          title: Observed At
+          description: 含時區的觀測時間；超過 30 秒不作目前讀值。
+        metrics:
+          $ref: '#/components/schemas/Metrics'
+        quality:
+          type: string
+          enum:
+          - ok
+          - suspect
+          - invalid
+          title: Quality
+          default: ok
+      additionalProperties: false
+      type: object
+      required:
+      - observed_at
+      - metrics
+      title: ObservationInput
+    PersonalityConfig:
+      properties:
+        name:
+          type: string
+          const: MEMO
+          title: Name
+          default: MEMO
+        language:
+          type: string
+          const: zh-TW
+          title: Language
+          default: zh-TW
+        tone:
+          $ref: '#/components/schemas/Tone'
+          description: 人格語氣：溫柔、活潑或簡潔。
+          default: gentle
+      additionalProperties: false
+      type: object
+      title: PersonalityConfig
+    PreparedResponse:
+      properties:
+        request_id:
+          type: string
+          format: uuid
+          title: Request Id
+        system_prompt:
+          type: string
+          title: System Prompt
+        user_prompt:
+          type: string
+          title: User Prompt
+          description: JSON 編碼的使用者訊息及已篩選上下文。
+        output_schema:
+          additionalProperties: true
+          type: object
+          title: Output Schema
+          description: 給未來模型 adapter 使用的 JSON Schema。
+        warnings:
+          items:
+            type: string
+          type: array
+          title: Warnings
+      additionalProperties: false
+      type: object
+      required:
+      - request_id
+      - system_prompt
+      - user_prompt
+      - output_schema
+      - warnings
+      title: PreparedResponse
+    ReadingOutput:
+      properties:
+        message_id:
+          type: string
+          title: Message Id
+        device_id:
+          type: string
+          title: Device Id
+        observed_at:
+          type: string
+          format: date-time
+          title: Observed At
+        received_at:
+          type: string
+          format: date-time
+          title: Received At
+        sequence:
+          type: integer
+          title: Sequence
+        temperature_c:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Temperature C
+        humidity_pct:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Humidity Pct
+        co2_ppm:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Co2 Ppm
+        quality:
+          type: string
+          title: Quality
+      additionalProperties: false
+      type: object
+      required:
+      - message_id
+      - device_id
+      - observed_at
+      - received_at
+      - sequence
+      - temperature_c
+      - humidity_pct
+      - co2_ppm
+      - quality
+      title: ReadingOutput
+    TelemetryInput:
+      properties:
+        schema_version:
+          type: integer
+          const: 1
+          title: Schema Version
+          default: 1
+        message_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          title: Message Id
+        device_id:
+          type: string
+          maxLength: 64
+          minLength: 1
+          pattern: ^[a-zA-Z0-9_-]+$
+          title: Device Id
+        observed_at:
+          type: string
+          format: date-time
+          title: Observed At
+        sequence:
+          type: integer
+          maximum: 2147483647.0
+          minimum: 0.0
+          title: Sequence
+        metrics:
+          $ref: '#/components/schemas/Metrics'
+        quality:
+          type: string
+          enum:
+          - ok
+          - suspect
+          - invalid
+          title: Quality
+          default: ok
+      additionalProperties: false
+      type: object
+      required:
+      - message_id
+      - device_id
+      - observed_at
+      - sequence
+      - metrics
+      title: TelemetryInput
+    Tone:
+      type: string
+      enum:
+      - gentle
+      - lively
+      - concise
+      title: Tone
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError

@@ -1,0 +1,19 @@
+from datetime import datetime
+from typing import Protocol
+
+from memo.domain.entities import Device, Reading
+
+
+class Repository(Protocol):
+    def add_device(self, device: Device) -> Device: ...
+    def get_device(self, device_id: str) -> Device | None: ...
+    def list_devices(self, limit: int, offset: int) -> list[Device]: ...
+    def add_reading(self, reading: Reading) -> Reading: ...
+    def list_readings(
+        self,
+        device_id: str,
+        start: datetime | None,
+        end: datetime | None,
+        limit: int,
+        offset: int,
+    ) -> list[Reading]: ...

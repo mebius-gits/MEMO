@@ -1,0 +1,56 @@
+{
+  "$defs": {
+    "EmotionLabel": {
+      "enum": [
+        "neutral",
+        "friendly",
+        "concerned",
+        "happy",
+        "confused"
+      ],
+      "title": "EmotionLabel",
+      "type": "string"
+    },
+    "EmotionOutput": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "$ref": "#/$defs/EmotionLabel",
+          "description": "MEMO 的顯示情緒，不代表使用者情緒或事件嚴重程度。"
+        },
+        "intensity": {
+          "description": "表情強度，0 到 1。",
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Intensity",
+          "type": "number"
+        }
+      },
+      "required": [
+        "label",
+        "intensity"
+      ],
+      "title": "EmotionOutput",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "text": {
+      "description": "顯示給使用者的繁體中文文字。",
+      "maxLength": 2000,
+      "minLength": 1,
+      "title": "Text",
+      "type": "string"
+    },
+    "emotion": {
+      "$ref": "#/$defs/EmotionOutput"
+    }
+  },
+  "required": [
+    "text",
+    "emotion"
+  ],
+  "title": "ModelReply",
+  "type": "object"
+}
