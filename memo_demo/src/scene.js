@@ -5,7 +5,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 // Cartoon handheld companion: stepped toon shading, inverted-hull ink outlines, flat decal buttons.
 const INK = 0x1d2b2f;
 const COLORS = { body: 0x66c7b8, arm: 0x5fb0b4, leg: 0x4f8f99, slot: 0x2c5d59, blue: 0x3a4fb3, yellow: 0xf6d23b, cyan: 0x86d8ec, green: 0x4cc45b, red: 0xe9455a };
-const SCREEN = '#CDEFDB', FACE = '#1D2B2F';
+const SCREEN = '#CDEFDB', ALERT_SCREEN = '#FBDCCF', FACE = '#1D2B2F';
 const W = 2, H = 2.5, D = 1.3, FRONT = D / 2, CENTER = H / 2 + .05;
 
 export function createMemoScene(container) {
@@ -141,42 +141,114 @@ export function createMemoScene(container) {
   const headAnchor = new THREE.Vector3(W / 2 - .1, H + .3, FRONT);
   let mood = 'neutral', intensity = .4, talking = false, paused = matchMedia('(prefers-reduced-motion: reduce)').matches;
   let lastFace = '', frameId;
+  // The screen shows either a face (eyes, mouth, optional brows/blush/sweat) or, for a few
+  // states, a full-screen symbol instead of the face — never both.
+  const EXPRESSIONS = {
+    neutral: { eyes: 'dot', mouth: 'smile' },
+    friendly: { eyes: 'dot', mouth: 'grin', blush: true },
+    happy: { eyes: 'arc', mouth: 'open', blush: true },
+    concerned: { eyes: 'dot', brows: 'worried', mouth: 'frown', sweat: true },
+    surprised: { eyes: 'wide', brows: 'up', mouth: 'o' },
+    proud: { eyes: 'lidded', mouth: 'smirk' },
+    sleepy: { eyes: 'closed', mouth: 'small' },
+    confused: { screen: 'question' },
+    thinking: { screen: 'loading' },
+    listening: { screen: 'wave' },
+    alert: { screen: 'alert' },
+    error: { screen: 'error' },
+  };
+  const ANIMATED = new Set(['loading', 'wave']);
+  function symbol(kind, frame) {
+    const bold = size => `900 ${size}px "Arial Black", "Helvetica Neue", sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    if (kind === 'question') { ctx.fillStyle = FACE; ctx.font = bold(470); ctx.fillText('?', 512, 385); }
+    else if (kind === 'alert') { ctx.fillStyle = '#D9363E'; ctx.font = bold(470); ctx.fillText('!', 512, 385); }
+    else if (kind === 'error') {
+      ctx.fillStyle = '#D9363E'; ctx.font = bold(190); ctx.fillText('ERROR!', 512, 375);
+    } else if (kind === 'loading') {
+      // Eight dots in a ring; the bright one walks round, older ones fade.
+      for (let i = 0; i < 8; i++) {
+        const angle = (i / 8) * Math.PI * 2 - Math.PI / 2, age = (frame - i + 8) % 8;
+        ctx.globalAlpha = Math.max(.15, 1 - age * .12);
+        ctx.fillStyle = FACE; ctx.beginPath();
+        ctx.arc(512 + Math.cos(angle) * 170, 363 + Math.sin(angle) * 170, 34, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    } else if (kind === 'wave') {
+      // Level bars, like a recorder listening.
+      ctx.fillStyle = FACE;
+      for (let i = 0; i < 7; i++) {
+        const height = 70 + Math.abs(Math.sin(frame * .55 + i * .9)) * 300;
+        ctx.beginPath(); ctx.roundRect(512 + (i - 3) * 104 - 28, 363 - height / 2, 56, height, 28); ctx.fill();
+      }
+    }
+  }
+  function line(points, width = 20) {
+    ctx.beginPath(); ctx.lineWidth = width;
+    points.forEach(([x, y, cx, cy], i) => {
+      if (!i) ctx.moveTo(x, y); else if (cx === undefined) ctx.lineTo(x, y); else ctx.quadraticCurveTo(cx, cy, x, y);
+    });
+    ctx.stroke();
+  }
   function drawFace(blink, mouthOpen) {
-    const faceKey = `${mood}-${blink}-${mouthOpen}`;
+    const look = EXPRESSIONS[mood] || EXPRESSIONS.neutral;
+    // Animated symbols redraw ~10 times a second; faces only when something changes.
+    const frame = ANIMATED.has(look.screen) && !paused ? Math.floor(performance.now() / 100) : 0;
+    const faceKey = look.screen ? `${look.screen}-${frame}` : `${mood}-${blink}-${mouthOpen}`;
     if (lastFace === faceKey) return;
     lastFace = faceKey;
     ctx.clearRect(0, 0, 1024, 726);
-    ctx.fillStyle = SCREEN; ctx.strokeStyle = FACE; ctx.lineWidth = 26;
+    ctx.fillStyle = look.screen === 'alert' || look.screen === 'error' ? ALERT_SCREEN : SCREEN;
+    ctx.strokeStyle = FACE; ctx.lineWidth = 26;
     ctx.beginPath(); ctx.roundRect(14, 14, 996, 698, 64); ctx.fill(); ctx.stroke();
     ctx.fillStyle = FACE; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    if (look.screen) { symbol(look.screen, frame); faceTexture.needsUpdate = true; return; }
     const eyeY = 300;
-    for (const x of [330, 694]) {
-      ctx.beginPath(); ctx.lineWidth = 20;
-      if (blink) { ctx.moveTo(x - 30, eyeY + 6); ctx.lineTo(x + 30, eyeY + 6); ctx.stroke(); }
-      else if (mood === 'happy') { ctx.moveTo(x - 36, eyeY + 16); ctx.quadraticCurveTo(x, eyeY - 38, x + 36, eyeY + 16); ctx.stroke(); }
-      else { ctx.ellipse(x, eyeY, 30, mood === 'confused' && x > 512 ? 24 : 42, 0, 0, Math.PI * 2); ctx.fill(); }
-    }
-    if (mood === 'concerned') {
-      ctx.lineWidth = 16; ctx.beginPath();
-      ctx.moveTo(280, 228); ctx.lineTo(360, 210); ctx.moveTo(664, 210); ctx.lineTo(744, 228); ctx.stroke();
-    }
-    if (mood === 'friendly' || mood === 'happy') {
+    [330, 694].forEach((x, side) => {
+      const eyes = blink && look.eyes !== 'closed' ? 'blink' : look.eyes;
+      ctx.beginPath();
+      if (eyes === 'blink') line([[x - 30, eyeY + 6], [x + 30, eyeY + 6]]);
+      else if (eyes === 'arc') line([[x - 36, eyeY + 16], [x + 36, eyeY + 16, x, eyeY - 38]]);
+      else if (eyes === 'closed') line([[x - 34, eyeY], [x + 34, eyeY, x, eyeY + 30]]);
+      else if (eyes === 'lidded') { ctx.ellipse(x, eyeY + 8, 30, 30, 0, 0, Math.PI); ctx.fill(); line([[x - 40, eyeY + 4], [x + 40, eyeY + 4]], 16); }
+      else if (eyes === 'squint' && side === 1) line([[x - 32, eyeY + 4], [x + 32, eyeY - 4]]);
+      else if (eyes === 'wide') { ctx.ellipse(x, eyeY, 40, 52, 0, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = SCREEN; ctx.beginPath(); ctx.arc(x + 12, eyeY - 16, 11, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = FACE; }
+      else if (eyes === 'up') { ctx.ellipse(x + 14, eyeY - 18, 28, 38, 0, 0, Math.PI * 2); ctx.fill(); }
+      else { ctx.ellipse(x, eyeY, 30, 42, 0, 0, Math.PI * 2); ctx.fill(); }
+    });
+    ctx.lineWidth = 16;
+    if (look.brows === 'worried') { line([[280, 232], [360, 208]], 16); line([[664, 208], [744, 232]], 16); }
+    else if (look.brows === 'stern') { line([[280, 206], [365, 236]], 16); line([[659, 236], [744, 206]], 16); }
+    else if (look.brows === 'raised') line([[650, 200], [740, 214, 700, 176]], 16);
+    else if (look.brows === 'up') { line([[285, 210], [375, 210, 330, 180]], 16); line([[649, 210], [739, 210, 694, 180]], 16); }
+    if (look.blush) {
       ctx.fillStyle = 'rgba(240, 140, 150, .45)';
       for (const x of [230, 794]) { ctx.beginPath(); ctx.ellipse(x, 400, 48, 24, 0, 0, Math.PI * 2); ctx.fill(); }
       ctx.fillStyle = FACE;
     }
-    ctx.beginPath(); ctx.lineWidth = 14;
-    if (mouthOpen) {
+    if (look.sweat) {
+      ctx.fillStyle = '#6EB8E8'; ctx.beginPath();
+      ctx.moveTo(812, 196); ctx.quadraticCurveTo(780, 250, 790, 268); ctx.arc(812, 262, 22, Math.PI * .9, Math.PI * 2.1, true); ctx.quadraticCurveTo(844, 250, 812, 196); ctx.fill();
+      ctx.fillStyle = FACE;
+    }
+    const mouth = mouthOpen ? 'talk' : look.mouth;
+    ctx.lineWidth = 14;
+    if (mouth === 'talk') {
       // Speaking: a small open mouth that flaps while audio plays.
-      ctx.ellipse(512, 455, 52, 34, 0, 0, Math.PI * 2); ctx.fillStyle = '#2E6B3C'; ctx.fill(); ctx.stroke();
-    } else if (mood === 'happy') {
-      const mouth = new Path2D('M420 420 L604 420 C604 560 420 560 420 420 Z');
-      ctx.fillStyle = '#2E6B3C'; ctx.fill(mouth);
-      ctx.save(); ctx.clip(mouth); ctx.fillStyle = '#7CD06D'; ctx.beginPath(); ctx.ellipse(512, 535, 70, 46, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
-      ctx.stroke(mouth);
-    } else if (mood === 'confused') { ctx.arc(530, 455, 28, 0, Math.PI * 2); ctx.stroke(); }
-    else if (mood === 'concerned') { ctx.moveTo(452, 470); ctx.quadraticCurveTo(512, 425, 572, 470); ctx.stroke(); }
-    else { const wide = mood === 'friendly' ? 110 : 82; ctx.moveTo(512 - wide, 420); ctx.quadraticCurveTo(512, mood === 'friendly' ? 520 : 495, 512 + wide, 420); ctx.stroke(); }
+      ctx.beginPath(); ctx.ellipse(512, 455, 52, 34, 0, 0, Math.PI * 2); ctx.fillStyle = '#2E6B3C'; ctx.fill(); ctx.stroke();
+    } else if (mouth === 'open') {
+      const shape = new Path2D('M420 420 L604 420 C604 560 420 560 420 420 Z');
+      ctx.fillStyle = '#2E6B3C'; ctx.fill(shape);
+      ctx.save(); ctx.clip(shape); ctx.fillStyle = '#7CD06D'; ctx.beginPath(); ctx.ellipse(512, 535, 70, 46, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+      ctx.stroke(shape);
+    } else if (mouth === 'o') { ctx.beginPath(); ctx.ellipse(512, 470, 36, 44, 0, 0, Math.PI * 2); ctx.fillStyle = '#2E6B3C'; ctx.fill(); ctx.stroke(); }
+    else if (mouth === 'wavy') line([[440, 470], [485, 455, 462, 440], [530, 470, 508, 488], [580, 455, 555, 440]], 14);
+    else if (mouth === 'frown') line([[452, 478], [572, 478, 512, 428]], 14);
+    else if (mouth === 'flat') line([[450, 465], [574, 465]], 14);
+    else if (mouth === 'side') line([[470, 468], [570, 452, 530, 476]], 14);
+    else if (mouth === 'smirk') line([[440, 450], [590, 430, 530, 500]], 14);
+    else if (mouth === 'small') line([[485, 462], [539, 462, 512, 482]], 14);
+    else { const wide = mouth === 'grin' ? 110 : 82; line([[512 - wide, 420], [512 + wide, 420, 512, mouth === 'grin' ? 520 : 495]], 14); }
     faceTexture.needsUpdate = true;
   }
 
@@ -188,7 +260,8 @@ export function createMemoScene(container) {
     const bounce = mood === 'happy' && !paused ? Math.abs(Math.sin(elapsed * 4)) * .05 : 0;
     body.position.y = breath * .018 + bounce;
     body.scale.set(1 - breath * .006, 1 + breath * .008, 1);
-    body.rotation.z = mood === 'confused' ? -.07 : Math.sin(elapsed * .7) * .008 * intensity;
+    // Confused tilts its head; alert trembles slightly; otherwise a gentle sway.
+    body.rotation.z = mood === 'confused' ? -.07 : mood === 'alert' && !paused ? Math.sin(elapsed * 26) * .012 : Math.sin(elapsed * .7) * .008 * intensity;
     feet.forEach((foot, i) => { foot.rotation.x = paused ? 0 : Math.sin(elapsed * 2.2 + i * 1.4) * .12 * (mood === 'happy' ? 2 : 1); });
     drawFace(!paused && elapsed % 5 > 4.82, talking && !paused && Math.floor(performance.now() / 140) % 2 === 1);
     controls.update(); renderer.render(scene, camera);

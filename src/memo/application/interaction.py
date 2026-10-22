@@ -70,6 +70,9 @@ class InteractionService:
             "schedule 是到期的排程任務；missed 是使用者離開期間沒收到的提醒。"
             "僅輸出符合 output_schema 的 JSON：text 與 emotion。"
             "emotion 是 MEMO 顯示表情，不是使用者情緒診斷，也不是警報嚴重程度。"
+            "依當下心情選：專業解說數據時用 proud，聽不懂或資料不足用 confused，"
+            "嚇一跳用 surprised，深夜想睡用 sleepy，情況危險用 alert，其餘用 neutral、"
+            "friendly、happy、concerned。"
         )
         system += (
             "你是坐在身邊、細心但不嘮叨的小夥伴。回覆會被念出來，要像面對面聊天："

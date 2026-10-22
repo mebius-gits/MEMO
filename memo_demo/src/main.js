@@ -171,8 +171,9 @@ document.querySelectorAll('input[name="persona"]').forEach(input => { input.onch
 // Editing a preset's description turns it into the custom persona.
 $('#persona-text').oninput = event => { persona.custom = event.target.value; if (persona.id !== 'custom') { persona.id = 'custom'; $('input[name="persona"][value="custom"]').checked = true; } storage.set('memo.persona', JSON.stringify(persona)); };
 renderPersona();
-const moodLabels = { neutral: '安靜陪伴', friendly: '溫柔陪伴', happy: '開心', concerned: '有點關心', confused: '還想多了解' };
-const moodFaces = { neutral: '◡', friendly: '◡', happy: '▽', concerned: '︵', confused: '?' };
+// thinking and listening are page states; the rest come from MEMO's replies.
+const moodLabels = { neutral: '安靜陪伴', friendly: '溫柔陪伴', happy: '開心', concerned: '有點擔心', confused: '有點疑惑', surprised: '嚇一跳', proud: '專業模式', sleepy: '有點睏', alert: '警戒中', error: '出錯了', thinking: '思考中', listening: '在聽你說' };
+const moodFaces = { neutral: '◡', friendly: '◡', happy: '▽', concerned: '︵', confused: '?', surprised: '!', proud: '✦', sleepy: 'z', alert: '!', error: '×', thinking: '…', listening: '♪' };
 const chips = () => document.querySelectorAll('.chip');
 async function chat(text) {
   if (chatting) return;
@@ -181,6 +182,7 @@ async function chat(text) {
   chatting = true; $('#send-message').disabled = true; chips().forEach(chip => { chip.disabled = true; });
   $('#chat-input').value = '';
   say('讓我想想…', { quote: text, waiting: true });
+  showEmotion({ label: 'thinking', intensity: .5 });
   try {
     const reply = await request(`/api/v1/devices/${encodeURIComponent(selected)}/interaction`, { method: 'POST', body: JSON.stringify({ session_id: sessionId, request_id: crypto.randomUUID(), user_message: text, personality: personality() }) });
     if (generation !== currentGeneration) { say('裝置已切換，已略過上一個裝置的回覆。'); return; }

@@ -221,7 +221,7 @@ API 程序內有一個背景執行緒（`run_scheduler`），每秒檢查一次�
 1. 寬鬆解析：容忍程式碼區塊標記、前後說明文字、多餘欄位、字串型的 intensity、不認得的表情（改為 neutral）；只有完全沒有可用文字時才判為無效。
 2. 長度保護：只保留前面完整的句子，最多 80 字。
 3. 繁體保護：模型偶爾混入簡體字。只轉換「僅簡體才有」的字（例如 记→記），兩岸共用的字（干、台、里）保持原樣；但若相鄰是簡體字（表示整個詞是簡體），就跟著整詞轉換（这里→這裡、干净→乾淨），所以正確的「干擾」「台灣」不會被改錯。
-4. 主動事件通知的表情由事件決定：恢復顯示開心，其他顯示關心。
+4. 表情：模型可選 neutral、friendly、happy、concerned、confused、surprised、proud（解說數據的專業時刻）、sleepy、alert。主動事件通知的表情由事件決定：恢復為 happy，危險等級為 alert，其他為 concerned。網頁另有 thinking（等待回覆）、listening（錄音中）、error（請求失敗）三個狀態。螢幕只會顯示臉或符號其中一種，不混用：confused 整面顯示「?」、thinking 為轉圈的 loading、listening 為跳動的音量條、alert 為暖紅底大紅「!」並輕微顫動、error 為「ERROR!」；其餘為只有表情的臉。
 5. 失敗時改用模板，並在回覆標記 `fallback_reason`（`model_timeout`／`model_unavailable`／`invalid_model_output`），不會把模板偽裝成模型回覆。
 
 ## 7. 輸出與投遞

@@ -6,7 +6,11 @@
         "friendly",
         "concerned",
         "happy",
-        "confused"
+        "confused",
+        "surprised",
+        "proud",
+        "sleepy",
+        "alert"
       ],
       "title": "EmotionLabel",
       "type": "string"

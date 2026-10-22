@@ -8,7 +8,7 @@ from dataclasses import replace
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from memo.domain.interaction import EmotionLabel, Reply
+from memo.domain.interaction import EmotionLabel, Reply, notice_emotion
 from memo.infrastructure.template_reply import TemplateReplyGenerator
 from memo.infrastructure.traditional import to_traditional
 
@@ -80,9 +80,9 @@ class ModelReplyGenerator:
             return self.fallback.generate(prepared)
         instructions = (
             prepared.system_prompt + '\nJSON contract: {"text":"繁體中文，1至2000字",'
-            '"emotion":{"label":"neutral|friendly|concerned|happy|confused",'
-            '"intensity":0.4}}, plus the optional "action" object when allowed above. '
-            "No other fields."
+            '"emotion":{"label":"neutral|friendly|happy|concerned|confused|surprised|'
+            'proud|sleepy|alert","intensity":0.4}}, plus the optional "action" object when '
+            "allowed above. No other fields."
         )
         if settings.openai_system_role:
             messages = [
@@ -120,10 +120,8 @@ class ModelReplyGenerator:
             text, emotion, intensity = parse_content(content)
             # A rule-driven notification's expression cannot contradict its lifecycle.
             if prepared.input.proactive and prepared.input.event:
-                emotion = (
-                    EmotionLabel.HAPPY
-                    if prepared.input.event.status == "resolved"
-                    else EmotionLabel.CONCERNED
+                emotion = notice_emotion(
+                    prepared.input.event.status, (prepared.input.attention or {}).get("level")
                 )
             action = None if prepared.input.proactive else extract_action(content)
             if action and isinstance(action.get("message"), str):

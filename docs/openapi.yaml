@@ -815,6 +815,10 @@ components:
       - concerned
       - happy
       - confused
+      - surprised
+      - proud
+      - sleepy
+      - alert
       title: EmotionLabel
     EmotionOutput:
       properties:

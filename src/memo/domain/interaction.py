@@ -15,6 +15,17 @@ class EmotionLabel(str, Enum):
     CONCERNED = "concerned"
     HAPPY = "happy"
     CONFUSED = "confused"
+    SURPRISED = "surprised"
+    PROUD = "proud"  # 專業小專家模式：精準解說數據時
+    SLEEPY = "sleepy"
+    ALERT = "alert"  # 危險等級；網頁會把螢幕轉成暖紅色
+
+
+def notice_emotion(event_status: str, level: str | None) -> EmotionLabel:
+    """A rule-driven notice's expression follows its lifecycle and severity, not the model."""
+    if event_status == "resolved":
+        return EmotionLabel.HAPPY
+    return EmotionLabel.ALERT if level == "danger" else EmotionLabel.CONCERNED
 
 
 @dataclass(frozen=True)

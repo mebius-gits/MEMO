@@ -1,5 +1,11 @@
 from memo.domain.environment import event_words
-from memo.domain.interaction import EmotionLabel, PreparedInteraction, Reply, Tone
+from memo.domain.interaction import (
+    EmotionLabel,
+    PreparedInteraction,
+    Reply,
+    Tone,
+    notice_emotion,
+)
 
 LABELS = {
     "temperature_c": ("溫度", "°C"),
@@ -77,9 +83,7 @@ class TemplateReplyGenerator:
                     level=attention.get("level"),
                     minutes=attention.get("minutes_active"),
                 )
-                emotion = (
-                    EmotionLabel.HAPPY if event.status == "resolved" else EmotionLabel.CONCERNED
-                )
+                emotion = notice_emotion(event.status, attention.get("level"))
                 return Reply(text, emotion, 0.5)
             if not prepared.usable_metrics:
                 return Reply(
