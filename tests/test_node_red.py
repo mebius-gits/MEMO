@@ -33,9 +33,11 @@ const fs = require('fs');
 const nodes = JSON.parse(fs.readFileSync('node-red/flows.json', 'utf8'));
 const env = {get: key => ({MEMO_API_URL:'http://api:8000', MEMO_DEVICE_ID:'room01'})[key]};
 const requests = {};
+const values = {};
+const flow = {get: key => values[key], set: (key, value) => { values[key] = value; }};
 for (const n of nodes.filter(n => n.type === 'function')) {
-    const fn = new Function('msg', 'env', n.func);
-    requests[n.id] = fn({_msgid:'test-message'}, env);
+    const fn = new Function('msg', 'env', 'flow', n.func);
+    requests[n.id] = fn({_msgid:'test-message'}, env, flow);
 }
 console.log(JSON.stringify(requests));
 """

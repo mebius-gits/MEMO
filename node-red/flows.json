@@ -666,5 +666,316 @@
     "tostatus": false,
     "complete": "true",
     "targetType": "full"
+  },
+  {
+    "id": "memo-mqtt",
+    "type": "tab",
+    "label": "MEMO MQTT 持續感測",
+    "disabled": false,
+    "info": "按開始後每 5 秒發布 QoS 1 感測資料，經 broker 與獨立 Worker 落庫。按停止結束。"
+  },
+  {
+    "id": "mqtt-start",
+    "type": "inject",
+    "z": "memo-mqtt",
+    "name": "開始持續傳送",
+    "x": 170,
+    "y": 100,
+    "wires": [
+      [
+        "mqtt-toggle"
+      ]
+    ],
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "payload": "true",
+    "payloadType": "bool",
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": ""
+  },
+  {
+    "id": "mqtt-stop",
+    "type": "inject",
+    "z": "memo-mqtt",
+    "name": "停止持續傳送",
+    "x": 170,
+    "y": 180,
+    "wires": [
+      [
+        "mqtt-toggle"
+      ]
+    ],
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "payload": "false",
+    "payloadType": "bool",
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": ""
+  },
+  {
+    "id": "mqtt-toggle",
+    "type": "function",
+    "z": "memo-mqtt",
+    "name": "切換傳送狀態",
+    "x": 430,
+    "y": 140,
+    "wires": [
+      [
+        "mqtt-debug"
+      ]
+    ],
+    "func": "flow.set('memo_mqtt_enabled', msg.payload === true);\nreturn null;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": []
+  },
+  {
+    "id": "mqtt-tick",
+    "type": "inject",
+    "z": "memo-mqtt",
+    "name": "每 5 秒",
+    "x": 170,
+    "y": 300,
+    "wires": [
+      [
+        "mqtt-gate"
+      ]
+    ],
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "payload": "",
+    "payloadType": "date",
+    "repeat": "5",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": ""
+  },
+  {
+    "id": "mqtt-gate",
+    "type": "function",
+    "z": "memo-mqtt",
+    "name": "只在開始後傳送",
+    "x": 430,
+    "y": 300,
+    "wires": [
+      [
+        "mqtt-register-build"
+      ]
+    ],
+    "func": "return flow.get('memo_mqtt_enabled') ? msg : null;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": []
+  },
+  {
+    "id": "mqtt-register-build",
+    "type": "function",
+    "z": "memo-mqtt",
+    "name": "註冊模擬裝置",
+    "x": 670,
+    "y": 300,
+    "wires": [
+      [
+        "mqtt-register-http"
+      ]
+    ],
+    "func": "const base = (env.get('MEMO_API_URL') || 'http://api:8000').replace(/\\/$/, '');\nconst device = env.get('MEMO_DEVICE_ID') || 'room01';\nmsg.method = 'POST';\nmsg.url = base + '/api/v1/devices';\nmsg.headers = {'Content-Type':'application/json'};\nmsg.payload = {id: device, name: 'MEMO 模擬裝置', location:'示範空間'};\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": []
+  },
+  {
+    "id": "mqtt-register-http",
+    "type": "http request",
+    "z": "memo-mqtt",
+    "name": "確認裝置存在",
+    "x": 900,
+    "y": 300,
+    "wires": [
+      [
+        "mqtt-register-status"
+      ]
+    ],
+    "method": "use",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": []
+  },
+  {
+    "id": "mqtt-register-status",
+    "type": "switch",
+    "z": "memo-mqtt",
+    "name": "已註冊？",
+    "x": 1110,
+    "y": 300,
+    "wires": [
+      [
+        "mqtt-build"
+      ],
+      [
+        "mqtt-build"
+      ],
+      [
+        "mqtt-error"
+      ]
+    ],
+    "property": "statusCode",
+    "propertyType": "msg",
+    "rules": [
+      {
+        "t": "eq",
+        "v": "201",
+        "vt": "num"
+      },
+      {
+        "t": "eq",
+        "v": "409",
+        "vt": "num"
+      },
+      {
+        "t": "else"
+      }
+    ],
+    "checkall": "false",
+    "repair": false,
+    "outputs": 3
+  },
+  {
+    "id": "mqtt-build",
+    "type": "function",
+    "z": "memo-mqtt",
+    "name": "建立 MQTT 感測封包",
+    "x": 460,
+    "y": 440,
+    "wires": [
+      [
+        "mqtt-publish"
+      ]
+    ],
+    "func": "const device = env.get('MEMO_DEVICE_ID') || 'room01';\nconst sequence = (flow.get('memo_mqtt_sequence') || 0) + 1;\nflow.set('memo_mqtt_sequence', sequence);\nmsg.topic = 'buddy/v1/' + device + '/telemetry';\nmsg.payload = {schema_version:1, message_id:device + '-' + Date.now() + '-' + msg._msgid,\n  device_id:device, observed_at:new Date().toISOString(), sequence:sequence,\n  metrics:{temperature_c:25.5, humidity_pct:60, co2_ppm:800}, quality:'ok'};\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": []
+  },
+  {
+    "id": "mqtt-publish",
+    "type": "mqtt out",
+    "z": "memo-mqtt",
+    "name": "QoS 1 → Broker → Worker",
+    "x": 800,
+    "y": 440,
+    "wires": [],
+    "topic": "",
+    "qos": "1",
+    "retain": "false",
+    "respTopic": "",
+    "contentType": "",
+    "userProps": "",
+    "correl": "",
+    "expiry": "",
+    "broker": "memo-broker"
+  },
+  {
+    "id": "mqtt-debug",
+    "type": "debug",
+    "z": "memo-mqtt",
+    "name": "傳送狀態",
+    "x": 800,
+    "y": 140,
+    "wires": [],
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg"
+  },
+  {
+    "id": "mqtt-catch",
+    "type": "catch",
+    "z": "memo-mqtt",
+    "name": "流程錯誤",
+    "x": 470,
+    "y": 560,
+    "wires": [
+      [
+        "mqtt-error"
+      ]
+    ],
+    "scope": null,
+    "uncaught": false
+  },
+  {
+    "id": "mqtt-error",
+    "type": "debug",
+    "z": "memo-mqtt",
+    "name": "MQTT 流程錯誤",
+    "x": 800,
+    "y": 560,
+    "wires": [],
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "true",
+    "targetType": "full"
+  },
+  {
+    "id": "memo-broker",
+    "type": "mqtt-broker",
+    "name": "MEMO Mosquitto",
+    "broker": "${MEMO_MQTT_HOST}",
+    "port": "1883",
+    "clientid": "memo-node-red-demo",
+    "autoConnect": true,
+    "usetls": false,
+    "protocolVersion": "4",
+    "keepalive": "60",
+    "cleansession": true,
+    "autoUnsubscribe": true,
+    "birthTopic": "",
+    "birthQos": "0",
+    "birthPayload": "",
+    "closeTopic": "",
+    "closeQos": "0",
+    "closePayload": "",
+    "willTopic": "",
+    "willQos": "0",
+    "willPayload": ""
   }
 ]

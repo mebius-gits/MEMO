@@ -10,6 +10,8 @@ docker compose up -d --build
 
 開啟 http://localhost:1880，已預載完整範例節點；按「送出一筆模擬資料」即可自動註冊裝置、寫入讀值並查詢歷史。API 文件：http://localhost:8000/docs。需要 Docker Desktop（Linux containers）。詳見 [Node-RED 操作說明](node-red/README.md)。
 
+目前 Compose 也包含 Mosquitto 與獨立 MQTT environment-worker。要每 5 秒持續模擬資料，執行 `docker compose --profile demo up -d --build --wait`。接收流程、設定與驗證方式見 [MQTT Worker 說明](docs/mqtt-worker.md)。
+
 依 `environment_ai_plan.md` 建立的 Clean Architecture 後端。這一版完成裝置與感測歷史的 HTTP 流程，讓後續 MQTT、規則引擎與 AI 可以沿用 application 層。
 
 ## 本機啟動（PowerShell）
@@ -101,7 +103,7 @@ BUDDY_DATABASE_URL=postgresql+psycopg://buddy:password@localhost:5432/buddy
 
 ## 下一階段
 
-- MQTT broker、獨立 environment worker 與持續採樣模擬器（已有 API＋Node-RED Docker Compose 與手動模擬節點）。
+- Docker／Mosquitto 實際部署驗證與正式設備接入（已提供 broker、獨立 environment-worker、持續模擬器及 smoke scripts）。
 - 每個指標個別品質判斷、時鐘偏差、最新有效狀態與 stale 偵測。
 - 規則窗口、持續與恢復、事件、outbox 與通知 worker。
 - 持久化人格設定、事件操作、真實 LLM 串接、對話儲存與追蹤排程（已有 LLM 契約及模板預覽）。

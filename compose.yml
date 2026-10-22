@@ -24,15 +24,66 @@ services:
     depends_on:
       api:
         condition: service_healthy
+      broker:
+        condition: service_healthy
     environment:
       TZ: Asia/Taipei
       MEMO_API_URL: http://api:8000
       MEMO_DEVICE_ID: room01
+      MEMO_MQTT_HOST: broker
     ports:
       - "127.0.0.1:1880:1880"
     volumes:
       - node-red-data:/data
 
+  broker:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1883:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mqtt-data:/mosquitto/data
+    healthcheck:
+      test: ["CMD", "mosquitto_pub", "-h", "127.0.0.1", "-t", "memo/health", "-m", "ping", "-q", "1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  environment-worker:
+    build: .
+    restart: unless-stopped
+    command: ["python", "-m", "memo.workers.environment"]
+    environment:
+      BUDDY_DATABASE_URL: sqlite:////data/memo.db
+      MEMO_MQTT_HOST: broker
+      MEMO_MQTT_CLIENT_ID: memo-environment-worker
+    volumes:
+      - memo-data:/data
+    depends_on:
+      api:
+        condition: service_healthy
+      broker:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "memo.workers.environment", "--healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  simulator:
+    build: .
+    profiles: ["demo"]
+    restart: unless-stopped
+    command: ["python", "-m", "memo.workers.simulator", "--api-url", "http://api:8000"]
+    environment:
+      MEMO_MQTT_HOST: broker
+    depends_on:
+      environment-worker:
+        condition: service_healthy
+
 volumes:
   memo-data:
   node-red-data:
+  mqtt-data:

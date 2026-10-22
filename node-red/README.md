@@ -28,6 +28,8 @@ API 容器會自動執行 Alembic migration，通過健康檢查後才啟動 Nod
 
 ## 設定與保存
 
+「MEMO MQTT 持續感測」分頁可按開始／停止控制每 5 秒的傳送。資料經 MQTT broker → environment-worker 寫入，再到原本的環境感測分頁查詢歷史。MQTT 主機使用 `MEMO_MQTT_HOST=broker`，QoS 1、retain=false。詳見 [MQTT 說明](../docs/mqtt-worker.md)。
+
 「MEMO 文字與情緒」分頁提供 LLM 契約測試。按「測試 MEMO 文字＋情緒」後會送出人格與模擬上下文，分別顯示文字、情緒強度與完整回應。目前來源為 template，不呼叫外部模型，也不將這筆模擬數據寫入資料庫。可在「設定人格與模擬上下文」節點更改 tone 為 gentle / lively / concise。詳細欄位見 [LLM 介面說明](../docs/llm-api.md)。
 
 已有 Node-RED volume 的使用者需依下方說明 Import 新流程；重新 build 不會覆寫已保存的編輯內容。
@@ -53,6 +55,6 @@ API 容器會自動執行 Alembic migration，通過健康檢查後才啟動 Nod
 docker compose logs --tail 100 api node-red
 ```
 
-兩個服務只綁定主機的 127.0.0.1，供本機開發使用。這份範例是 Node-RED → HTTP API；MQTT broker、規則判斷、真實 LLM 模型呼叫與正式環境登入機制尚未實作。
+對外連接埠只綁定主機的 127.0.0.1，供本機開發使用。目前同時提供 HTTP 與 MQTT 感測流程；規則判斷、真實 LLM 模型呼叫與正式環境登入機制尚未實作。
 
 官方參考：[Node-RED Docker](https://nodered.org/docs/getting-started/docker)、[流程 JSON 匯入與匯出](https://nodered.org/docs/user-guide/editor/workspace/import-export)。
