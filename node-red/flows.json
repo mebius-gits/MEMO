@@ -672,13 +672,13 @@
     "type": "tab",
     "label": "MEMO MQTT 持續感測",
     "disabled": false,
-    "info": "按開始後每 5 秒發布 QoS 1 感測資料（隨機漂移，維持在告警門檻以下），經 broker 與獨立 Worker 落庫。下方按鈕可手動疊加異常值，按「恢復正常」逐步回到正常範圍。"
+    "info": "Node-RED 啟動後自動每 5 秒發布 QoS 1 感測資料（隨機漂移，維持在告警門檻以下），經 broker 與獨立 Worker 落庫；按停止可暫停。下方按鈕或網頁「環境干擾」可疊加異常值，按「恢復正常」逐步回到正常範圍。"
   },
   {
     "id": "mqtt-start",
     "type": "inject",
     "z": "memo-mqtt",
-    "name": "開始持續傳送",
+    "name": "開始持續傳送（預設已開始）",
     "x": 170,
     "y": 100,
     "wires": [
@@ -781,7 +781,7 @@
         "mqtt-register-build"
       ]
     ],
-    "func": "return flow.get('memo_mqtt_enabled') ? msg : null;",
+    "func": "// Runs by default after (re)start; only an explicit stop pauses it.\nreturn flow.get('memo_mqtt_enabled') !== false ? msg : null;",
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,
@@ -884,7 +884,7 @@
         "mqtt-publish"
       ]
     ],
-    "func": "const device = env.get('DEVICE_ID') || 'room01';\nconst sequence = (flow.get('memo_mqtt_sequence') || 0) + 1;\nflow.set('memo_mqtt_sequence', sequence);\n// Random walk inside a normal band below the backend alert thresholds: [min, max, max step, centre].\nconst NORMAL = {temperature_c: [23, 27.5, 0.12, 25], humidity_pct: [45, 68, 0.8, 58], co2_ppm: [550, 950, 20, 750]};\nconst LIMIT = {temperature_c: [-20, 50], humidity_pct: [0, 100], co2_ppm: [350, 5000]};\nconst clamp = (value, [low, high]) => Math.min(high, Math.max(low, value));\nconst base = flow.get('memo_mqtt_base') || {};\nconst target = flow.get('memo_mqtt_anomaly') || {};\nconst applied = flow.get('memo_mqtt_applied') || {};\nconst metrics = {};\nfor (const [key, [low, high, step, centre]] of Object.entries(NORMAL)) {\n  const previous = base[key] ?? centre;\n  base[key] = clamp(previous + (Math.random() * 2 - 1) * step + (centre - previous) * 0.02, [low, high]);\n  // Manual anomaly offsets ease in and out over a few samples instead of jumping.\n  const goal = target[key] || 0, current = applied[key] || 0;\n  applied[key] = Math.abs(goal - current) < step ? goal : current + (goal - current) * 0.35;\n  metrics[key] = Number(clamp(base[key] + applied[key], LIMIT[key]).toFixed(key === 'co2_ppm' ? 0 : 1));\n}\nflow.set('memo_mqtt_base', base);\nflow.set('memo_mqtt_applied', applied);\nconst abnormal = Object.values(applied).some(Boolean);\nnode.status({fill: abnormal ? 'red' : 'green', shape: 'dot', text: metrics.temperature_c + '°C ' + metrics.humidity_pct + '% ' + metrics.co2_ppm + 'ppm'});\nmsg.topic = 'memo/v1/' + device + '/telemetry';\nmsg.payload = {schema_version:1, message_id:device + '-' + Date.now() + '-' + msg._msgid,\n  device_id:device, observed_at:new Date().toISOString(), sequence:sequence, metrics, quality:'ok'};\nreturn msg;",
+    "func": "const device = env.get('DEVICE_ID') || 'room01';\nconst sequence = (flow.get('memo_mqtt_sequence') || 0) + 1;\nflow.set('memo_mqtt_sequence', sequence);\n// Random walk inside a normal band below the backend alert thresholds: [min, max, max step, centre].\nconst NORMAL = {temperature_c: [23, 27.5, 0.12, 25], humidity_pct: [45, 68, 0.8, 58], co2_ppm: [550, 950, 20, 750]};\nconst LIMIT = {temperature_c: [-20, 50], humidity_pct: [0, 100], co2_ppm: [350, 5000]};\nconst clamp = (value, [low, high]) => Math.min(high, Math.max(low, value));\nconst base = flow.get('memo_mqtt_base') || {};\nconst target = flow.get('memo_mqtt_anomaly') || {};\nconst applied = flow.get('memo_mqtt_applied') || {};\nconst metrics = {};\nfor (const [key, [low, high, step, centre]] of Object.entries(NORMAL)) {\n  const previous = base[key] ?? centre;\n  base[key] = clamp(previous + (Math.random() * 2 - 1) * step + (centre - previous) * 0.02, [low, high]);\n  // Manual anomaly offsets ease in and out over a few samples instead of jumping.\n  const goal = target[key] || 0, current = applied[key] || 0;\n  applied[key] = Math.abs(goal - current) < step ? goal : current + (goal - current) * 0.35;\n  metrics[key] = Number(clamp(base[key] + applied[key], LIMIT[key]).toFixed(key === 'co2_ppm' ? 0 : 1));\n}\nflow.set('memo_mqtt_base', base);\nflow.set('memo_mqtt_applied', applied);\nflow.set('memo_mqtt_latest', {...metrics, observed_at: new Date().toISOString()});\nconst abnormal = Object.values(applied).some(Boolean);\nnode.status({fill: abnormal ? 'red' : 'green', shape: 'dot', text: metrics.temperature_c + '°C ' + metrics.humidity_pct + '% ' + metrics.co2_ppm + 'ppm'});\nmsg.topic = 'memo/v1/' + device + '/telemetry';\nmsg.payload = {schema_version:1, message_id:device + '-' + Date.now() + '-' + msg._msgid,\n  device_id:device, observed_at:new Date().toISOString(), sequence:sequence, metrics, quality:'ok'};\nreturn msg;",
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,
@@ -959,7 +959,7 @@
     "id": "mqtt-anomaly-note",
     "type": "comment",
     "z": "memo-mqtt",
-    "name": "手動異常值：每按一次疊加一次偏移，數值在數筆內逐步升高；雙擊按鈕可改 delta",
+    "name": "手動異常值：按鈕每按一次疊加偏移；網頁「環境干擾」經 /memo/disturbance 設定同一組偏移",
     "info": "",
     "x": 420,
     "y": 640,
@@ -1069,16 +1069,19 @@
     "id": "mqtt-anomaly",
     "type": "function",
     "z": "memo-mqtt",
-    "name": "設定異常值",
+    "name": "設定異常值／網頁干擾",
     "x": 470,
     "y": 790,
     "wires": [
       [
         "mqtt-anomaly-debug"
+      ],
+      [
+        "mqtt-web-response"
       ]
     ],
-    "func": "// payload {metric, delta} adds to that metric's anomaly offset; {reset: true} clears all offsets.\nconst input = msg.payload;\nif (!input || typeof input !== 'object') return null;\nconst target = input.reset ? {} : {...(flow.get('memo_mqtt_anomaly') || {})};\nif (!input.reset) {\n  if (!['temperature_c', 'humidity_pct', 'co2_ppm'].includes(input.metric) || !Number.isFinite(input.delta)) {\n    node.warn('payload 需為 {\"metric\": \"co2_ppm\", \"delta\": 700} 或 {\"reset\": true}');\n    return null;\n  }\n  target[input.metric] = (target[input.metric] || 0) + input.delta;\n}\nflow.set('memo_mqtt_anomaly', target);\nconst labels = {temperature_c: '溫度', humidity_pct: '濕度', co2_ppm: 'CO₂'};\nconst text = Object.entries(target).filter(([, value]) => value).map(([key, value]) => labels[key] + (value > 0 ? ' +' : ' ') + value).join('、') || '正常';\nnode.status({fill: text === '正常' ? 'green' : 'red', shape: 'dot', text});\nmsg.payload = {anomaly_offset: target, sending: flow.get('memo_mqtt_enabled') === true};\nreturn msg;",
-    "outputs": 1,
+    "func": "// Inject buttons send {metric, delta} or {reset: true}.\n// The web page uses GET/POST /memo/disturbance with {offsets: {...}}, {reset: true} or {enabled: bool}.\nconst METRICS = {temperature_c: [-10, 15], humidity_pct: [-40, 40], co2_ppm: [-400, 3000]};\nconst fromWeb = Boolean(msg.req);\nlet input = msg.payload;\nif (typeof input === 'string') { try { input = JSON.parse(input); } catch { input = null; } }\nconst target = {...(flow.get('memo_mqtt_anomaly') || {})};\nlet error = '';\nif (!(fromWeb && msg.req.method === 'GET')) {\n  if (!input || typeof input !== 'object') error = 'payload 需為 JSON 物件';\n  else {\n    if (typeof input.enabled === 'boolean') flow.set('memo_mqtt_enabled', input.enabled);\n    if (input.reset) for (const key of Object.keys(target)) delete target[key];\n    if (input.offsets && typeof input.offsets === 'object') {\n      for (const [key, [low, high]] of Object.entries(METRICS)) {\n        const value = input.offsets[key];\n        if (value === undefined) continue;\n        if (!Number.isFinite(value)) { error = key + ' 需為數字'; break; }\n        target[key] = Math.min(high, Math.max(low, value));\n      }\n    }\n    if (input.metric !== undefined) {\n      if (!(input.metric in METRICS) || !Number.isFinite(input.delta)) error = 'payload 需為 {\"metric\": \"co2_ppm\", \"delta\": 700}';\n      else target[input.metric] = (target[input.metric] || 0) + input.delta;\n    }\n    if (!error && typeof input.enabled !== 'boolean' && !input.reset && !input.offsets && input.metric === undefined) error = '沒有可套用的設定';\n  }\n}\nif (error) {\n  if (!fromWeb) { node.warn(error); return null; }\n  msg.statusCode = 400;\n  msg.payload = {error};\n} else {\n  flow.set('memo_mqtt_anomaly', target);\n  const labels = {temperature_c: '溫度', humidity_pct: '濕度', co2_ppm: 'CO₂'};\n  const text = Object.entries(target).filter(([, value]) => value).map(([key, value]) => labels[key] + (value > 0 ? ' +' : ' ') + value).join('、') || '正常';\n  node.status({fill: text === '正常' ? 'green' : 'red', shape: 'dot', text});\n  msg.payload = {device_id: env.get('DEVICE_ID') || 'room01', enabled: flow.get('memo_mqtt_enabled') !== false,\n    anomaly_offset: target, latest: flow.get('memo_mqtt_latest') || null};\n}\nif (!fromWeb) return [msg, null];\n// text/plain POST keeps the browser request \"simple\" (no preflight); allow only configured origins.\nlet allowed = [];\ntry { allowed = JSON.parse(env.get('CORS_ORIGINS') || '[]'); } catch { allowed = []; }\nconst origin = msg.req.headers.origin;\nmsg.headers = Array.isArray(allowed) && allowed.includes(origin) ? {'Access-Control-Allow-Origin': origin, 'Vary': 'Origin'} : {};\nreturn [null, msg];",
+    "outputs": 2,
     "timeout": 0,
     "noerr": 0,
     "initialize": "",
@@ -1099,6 +1102,51 @@
     "tostatus": false,
     "complete": "payload",
     "targetType": "msg"
+  },
+  {
+    "id": "mqtt-web-get",
+    "type": "http in",
+    "z": "memo-mqtt",
+    "name": "GET 干擾狀態",
+    "url": "/memo/disturbance",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 180,
+    "y": 960,
+    "wires": [
+      [
+        "mqtt-anomaly"
+      ]
+    ]
+  },
+  {
+    "id": "mqtt-web-post",
+    "type": "http in",
+    "z": "memo-mqtt",
+    "name": "POST 網頁干擾",
+    "url": "/memo/disturbance",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 180,
+    "y": 1020,
+    "wires": [
+      [
+        "mqtt-anomaly"
+      ]
+    ]
+  },
+  {
+    "id": "mqtt-web-response",
+    "type": "http response",
+    "z": "memo-mqtt",
+    "name": "回應網頁",
+    "statusCode": "",
+    "headers": {},
+    "x": 720,
+    "y": 990,
+    "wires": []
   },
   {
     "id": "memo-broker",

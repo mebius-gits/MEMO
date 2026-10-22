@@ -35,6 +35,8 @@ services:
       API_URL: http://api:8000
       DEVICE_ID: room01
       MQTT_HOST: broker
+      # Web origins allowed to call the /memo/disturbance endpoint.
+      CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:5173","http://127.0.0.1:5173","https://memo-quiet-room.fancyhen36.chatgpt.site"]}
     ports:
       - "127.0.0.1:1880:1880"
     volumes:

@@ -31,7 +31,7 @@ def test_compose_and_flow(tmp_path, monkeypatch):
     script = """
 const fs = require('fs');
 const nodes = JSON.parse(fs.readFileSync('node-red/flows.json', 'utf8'));
-const env = {get: key => ({API_URL:'http://api:8000', DEVICE_ID:'room01'})[key]};
+const env = {get: key => ({API_URL:'http://api:8000', DEVICE_ID:'room01', CORS_ORIGINS:'["http://localhost:5173"]'})[key]};
 const requests = {};
 const values = {};
 const flow = {get: key => values[key], set: (key, value) => { values[key] = value; }};
@@ -48,7 +48,13 @@ fns['mqtt-anomaly']({payload: JSON.parse(byId['mqtt-anomaly-co2'].payload)}, env
 let raised; for (let i = 0; i < 20; i++) raised = sample('raised-' + i);
 fns['mqtt-anomaly']({payload: JSON.parse(byId['mqtt-anomaly-reset'].payload)}, env, flow, node);
 let recovered; for (let i = 0; i < 20; i++) recovered = sample('recovered-' + i);
-console.log(JSON.stringify({requests, normal, raised, recovered}));
+const web = (method, payload, origin = 'http://localhost:5173') => fns['mqtt-anomaly']({req: {method, headers: {origin}}, payload}, env, flow, node);
+const webSet = web('POST', JSON.stringify({offsets: {co2_ppm: 900, temperature_c: 99}, enabled: false}));
+const stopped = fns['mqtt-gate']({}, env, flow, node);
+const webBad = web('POST', 'not json');
+const webForeign = web('GET', {}, 'https://evil.example');
+const webReset = web('POST', JSON.stringify({reset: true, enabled: true}));
+console.log(JSON.stringify({requests, normal, raised, recovered, webSet, stopped, webBad, webForeign, webReset}));
 """
     result = subprocess.run(
         [node_executable, "-e", script], check=True, capture_output=True, encoding="utf-8"
@@ -63,6 +69,16 @@ console.log(JSON.stringify({requests, normal, raised, recovered}));
         assert len(set(values)) > 10
     assert output["raised"]["metrics"]["co2_ppm"] > 1200
     assert output["recovered"]["metrics"]["co2_ppm"] <= 950
+    # Web page endpoint: absolute offsets (clamped), start/stop, CORS only for configured origins.
+    debug, response = output["webSet"]
+    assert debug is None
+    assert response["payload"]["anomaly_offset"] == {"co2_ppm": 900, "temperature_c": 15}
+    assert response["payload"]["enabled"] is False and output["stopped"] is None
+    assert response["headers"]["Access-Control-Allow-Origin"] == "http://localhost:5173"
+    assert output["webBad"][1]["statusCode"] == 400
+    assert output["webForeign"][1]["headers"] == {}
+    assert output["webReset"][1]["payload"]["anomaly_offset"] == {}
+    assert output["webReset"][1]["payload"]["enabled"] is True
     url = f"sqlite:///{(tmp_path / 'flow.db').as_posix()}"
     monkeypatch.setenv("DATABASE_URL", url)
     command.upgrade(Config("alembic.ini"), "head")
