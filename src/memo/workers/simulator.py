@@ -16,12 +16,21 @@ from memo.infrastructure.settings import MqttSettings
 from memo.presentation.schemas import DeviceSchema
 
 
+def scenario_co2(elapsed):
+    if elapsed < 20:
+        return 800
+    if elapsed < 60:
+        return round(800 + (elapsed - 20) * 15)
+    return 1400 if elapsed < 210 else 800
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--api-url", default="http://localhost:8000")
     parser.add_argument("--device-id", default="room01")
     parser.add_argument("--interval", type=float, default=5)
     parser.add_argument("--count", type=int, default=0, help="0 means continuous")
+    parser.add_argument("--scenario", choices=["steady", "co2-rise-recover"], default="steady")
     args = parser.parse_args()
     if args.interval <= 0 or args.count < 0:
         parser.error("interval must be positive and count must be nonnegative")
@@ -75,7 +84,9 @@ def main():
                 "metrics": {
                     "temperature_c": 25 + sequence % 10 / 10,
                     "humidity_pct": 60,
-                    "co2_ppm": 800,
+                    "co2_ppm": scenario_co2((sequence - 1) * args.interval)
+                    if args.scenario == "co2-rise-recover"
+                    else 800,
                 },
             }
             info = client.publish(

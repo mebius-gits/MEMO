@@ -1,7 +1,7 @@
 from dataclasses import asdict
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -39,8 +39,18 @@ class SqlAlchemyRepository:
         return [Device(row.id, row.name, row.location) for row in rows]
 
     def add_reading(self, reading: Reading) -> Reading:
-        self.session.add(ReadingRow(**asdict(reading)))
         try:
+            # Serialize writers per device (also acquires SQLite's write lock).
+            self.session.execute(
+                update(DeviceRow)
+                .where(DeviceRow.id == reading.device_id)
+                .values(name=DeviceRow.name)
+            )
+            self.session.add(ReadingRow(**asdict(reading)))
+            self.session.flush()
+            from memo.infrastructure.environment_events import project_reading
+
+            project_reading(self.session, reading)
             self.session.commit()
         except IntegrityError as exc:
             self.session.rollback()

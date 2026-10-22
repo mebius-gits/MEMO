@@ -224,7 +224,7 @@ paths:
     post:
       tags:
       - MEMO interaction
-      summary: 產生 MEMO 文字與情緒（目前為模板預覽）
+      summary: 產生 MEMO 文字與情緒（模型或備援回覆）
       operationId: respond_api_v1_llm_respond_post
       requestBody:
         content:
@@ -277,6 +277,216 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/memory/conversation:
+    get:
+      tags:
+      - MEMO memory and events
+      summary: Conversation
+      operationId: conversation_api_v1_devices__device_id__memory_conversation_get
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      - name: session_id
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: ^[a-zA-Z0-9_-]+$
+          default: default
+          title: Session Id
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ConversationOutput'
+                title: Response Conversation Api V1 Devices  Device Id  Memory Conversation
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - MEMO memory and events
+      summary: Clear Conversation
+      operationId: clear_conversation_api_v1_devices__device_id__memory_conversation_delete
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      - name: session_id
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: ^[a-zA-Z0-9_-]+$
+          default: default
+          title: Session Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/memory/tasks:
+    get:
+      tags:
+      - MEMO memory and events
+      summary: Task Memory
+      operationId: task_memory_api_v1_devices__device_id__memory_tasks_get
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 30
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaskOutput'
+                title: Response Task Memory Api V1 Devices  Device Id  Memory Tasks
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/events:
+    get:
+      tags:
+      - MEMO memory and events
+      summary: Events
+      operationId: events_api_v1_devices__device_id__events_get
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EventOutput'
+                title: Response Events Api V1 Devices  Device Id  Events Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/notifications:
+    get:
+      tags:
+      - MEMO memory and events
+      summary: Notifications
+      operationId: notifications_api_v1_devices__device_id__notifications_get
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaskOutput'
+                title: Response Notifications Api V1 Devices  Device Id  Notifications
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/notifications/ack:
+    post:
+      tags:
+      - MEMO memory and events
+      summary: Acknowledge
+      operationId: acknowledge_api_v1_devices__device_id__notifications_ack_post
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Acknowledge'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Acknowledged'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /health/live:
     get:
       tags:
@@ -303,8 +513,60 @@ paths:
               schema: {}
 components:
   schemas:
+    Acknowledge:
+      properties:
+        task_id:
+          type: string
+          maxLength: 64
+          minLength: 1
+          title: Task Id
+      additionalProperties: false
+      type: object
+      required:
+      - task_id
+      title: Acknowledge
+    Acknowledged:
+      properties:
+        status:
+          type: string
+          const: acknowledged
+          title: Status
+      additionalProperties: false
+      type: object
+      required:
+      - status
+      title: Acknowledged
+    ConversationOutput:
+      properties:
+        request_id:
+          type: string
+          title: Request Id
+        user_text:
+          type: string
+          title: User Text
+        response:
+          $ref: '#/components/schemas/InteractionResponse'
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      additionalProperties: false
+      type: object
+      required:
+      - request_id
+      - user_text
+      - response
+      - created_at
+      title: ConversationOutput
     DeviceInteractionRequest:
       properties:
+        session_id:
+          type: string
+          maxLength: 64
+          minLength: 1
+          pattern: ^[a-zA-Z0-9_-]+$
+          title: Session Id
+          default: default
         request_id:
           type: string
           format: uuid
@@ -405,6 +667,54 @@ components:
       - status
       - rule_evidence
       title: EventInput
+    EventOutput:
+      properties:
+        rule_id:
+          type: string
+          title: Rule Id
+        status:
+          type: string
+          enum:
+          - normal
+          - pending
+          - active
+          - recovering
+          - resolved
+          - unknown
+          title: Status
+        last:
+          type: number
+          title: Last
+        since:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Since
+        live:
+          type: boolean
+          title: Live
+          default: false
+        score:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Score
+        event_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Event Id
+        version:
+          type: integer
+          title: Version
+          default: 0
+      additionalProperties: false
+      type: object
+      required:
+      - rule_id
+      - status
+      - last
+      title: EventOutput
     HTTPValidationError:
       properties:
         detail:
@@ -514,12 +824,20 @@ components:
           default: MEMO
         source:
           type: string
-          const: template
+          enum:
+          - template
+          - model
           title: Source
           default: template
         fallback_reason:
-          type: string
-          const: model_not_configured
+          anyOf:
+          - type: string
+            enum:
+            - model_not_configured
+            - model_timeout
+            - model_unavailable
+            - invalid_model_output
+          - type: 'null'
           title: Fallback Reason
           default: model_not_configured
         context_source:
@@ -583,6 +901,35 @@ components:
       additionalProperties: false
       type: object
       title: Metrics
+    NotificationReply:
+      properties:
+        text:
+          type: string
+          maxLength: 2000
+          minLength: 1
+          title: Text
+          description: 顯示給使用者的繁體中文文字。
+        emotion:
+          $ref: '#/components/schemas/EmotionOutput'
+        source:
+          type: string
+          enum:
+          - template
+          - model
+          title: Source
+        fallback_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Fallback Reason
+      additionalProperties: false
+      type: object
+      required:
+      - text
+      - emotion
+      - source
+      - fallback_reason
+      title: NotificationReply
     ObservationInput:
       properties:
         observed_at:
@@ -707,6 +1054,61 @@ components:
       - co2_ppm
       - quality
       title: ReadingOutput
+    TaskOutput:
+      properties:
+        id:
+          type: string
+          title: Id
+        event_id:
+          type: string
+          title: Event Id
+        event_version:
+          type: integer
+          title: Event Version
+        rule_id:
+          type: string
+          title: Rule Id
+        event_status:
+          type: string
+          enum:
+          - active
+          - resolved
+          title: Event Status
+        status:
+          type: string
+          enum:
+          - queued
+          - generating
+          - ready
+          - acknowledged
+          - cancelled
+          - expired
+          title: Status
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+        response:
+          anyOf:
+          - $ref: '#/components/schemas/NotificationReply'
+          - type: 'null'
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      - event_id
+      - event_version
+      - rule_id
+      - event_status
+      - status
+      - created_at
+      - expires_at
+      - response
+      title: TaskOutput
     TelemetryInput:
       properties:
         schema_version:

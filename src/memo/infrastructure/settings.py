@@ -8,7 +8,8 @@ class Settings(BaseSettings):
     app_name: str = "MEMO"
     database_url: str = "sqlite:///./memo.db"
     cors_origins: list[str] = []
-    # Connection settings reserved for the future model adapter; replies remain templates.
+    notifications_enabled: bool = True
+    # Chat Completions-compatible API; incomplete configuration uses templates.
     llm_base_url: AnyHttpUrl | None = None
     llm_model: str = ""
     llm_api_key: SecretStr = SecretStr("")

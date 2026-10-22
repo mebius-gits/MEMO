@@ -58,6 +58,7 @@ class EmotionOutput(Schema):
 
 
 class DeviceInteractionRequest(Schema):
+    session_id: Identifier = "default"
     request_id: UUID = Field(default_factory=uuid4)
     user_message: str = Field(min_length=1, max_length=2000)
     personality: PersonalityConfig = Field(default_factory=PersonalityConfig)
@@ -71,8 +72,13 @@ class ModelReply(Schema):
 class InteractionResponse(ModelReply):
     request_id: UUID
     character: Literal["MEMO"] = "MEMO"
-    source: Literal["template"] = "template"
-    fallback_reason: Literal["model_not_configured"] = "model_not_configured"
+    source: Literal["template", "model"] = "template"
+    fallback_reason: (
+        Literal[
+            "model_not_configured", "model_timeout", "model_unavailable", "invalid_model_output"
+        ]
+        | None
+    ) = "model_not_configured"
     context_source: Literal["caller_supplied", "stored_readings"] = "caller_supplied"
     event_id: str | None = None
     event_version: int | None = None

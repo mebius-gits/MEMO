@@ -49,6 +49,8 @@ class InteractionInput:
     approved_suggestions: tuple[str, ...] = ()
     history: tuple[dict[str, str], ...] = ()
     context_source: str = "caller_supplied"
+    task_memory: tuple[dict, ...] = ()
+    proactive: bool = False
 
 
 @dataclass(frozen=True)
@@ -65,3 +67,5 @@ class Reply:
     text: str
     emotion: EmotionLabel
     intensity: float
+    source: str = "template"
+    fallback_reason: str | None = "model_not_configured"

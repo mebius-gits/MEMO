@@ -1,3 +1,5 @@
+import asyncio
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -11,11 +13,13 @@ from memo.application.interaction import InteractionService
 from memo.application.use_cases import EnvironmentService
 from memo.domain.entities import Conflict, NotFound
 from memo.infrastructure.database import build_engine
+from memo.infrastructure.model_reply import ModelReplyGenerator
+from memo.infrastructure.notifications import run_dispatcher
 from memo.infrastructure.repository import SqlAlchemyRepository
 from memo.infrastructure.settings import Settings
-from memo.infrastructure.template_reply import TemplateReplyGenerator
 from memo.presentation.interaction_routes import device_router
 from memo.presentation.interaction_routes import router as interaction_router
+from memo.presentation.memory_routes import router as memory_router
 from memo.presentation.routes import router
 
 
@@ -29,22 +33,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.service_factory = lambda session: EnvironmentService(
             SqlAlchemyRepository(session)
         )
+        stop = threading.Event()
+        dispatcher = threading.Thread(
+            target=run_dispatcher,
+            args=(
+                stop,
+                app.state.session_factory,
+                app.state.interaction_service,
+                settings.llm_timeout_seconds,
+            ),
+            daemon=True,
+        )
+        if settings.notifications_enabled:
+            dispatcher.start()
         try:
             yield
         finally:
+            stop.set()
+            if dispatcher.is_alive():
+                await asyncio.to_thread(dispatcher.join, settings.llm_timeout_seconds + 5)
             engine.dispose()
 
     app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "DELETE"],
         allow_headers=["Content-Type"],
     )
     app.include_router(router)
     app.include_router(interaction_router)
     app.include_router(device_router)
-    app.state.interaction_service = InteractionService(TemplateReplyGenerator())
+    app.include_router(memory_router)
+    app.state.interaction_service = InteractionService(ModelReplyGenerator(settings))
 
     @app.exception_handler(NotFound)
     async def not_found(_: Request, exc: NotFound):
@@ -64,6 +85,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             with request.app.state.session_factory() as session:
                 session.execute(text("SELECT id FROM devices LIMIT 1"))
                 session.execute(text("SELECT message_id FROM readings LIMIT 1"))
+                session.execute(text("SELECT id FROM task_memory LIMIT 1"))
+                session.execute(text("SELECT id FROM conversation_memory LIMIT 1"))
         except SQLAlchemyError:
             return JSONResponse(status_code=503, content={"status": "unavailable"})
         return {"status": "ready"}

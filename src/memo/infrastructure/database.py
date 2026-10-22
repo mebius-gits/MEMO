@@ -1,6 +1,17 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, create_engine, event
+from sqlalchemy import (
+    JSON,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    create_engine,
+    event,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.types import TypeDecorator
 
@@ -43,6 +54,43 @@ class ReadingRow(Base):
     humidity_pct: Mapped[float | None] = mapped_column(Float)
     co2_ppm: Mapped[float | None] = mapped_column(Float)
     quality: Mapped[str] = mapped_column(String(16))
+
+
+class EventStateRow(Base):
+    __tablename__ = "environment_states"
+    device_id: Mapped[str] = mapped_column(ForeignKey("devices.id"), primary_key=True)
+    rule_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    state: Mapped[dict] = mapped_column(JSON)
+
+
+class TaskMemoryRow(Base):
+    __tablename__ = "task_memory"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    device_id: Mapped[str] = mapped_column(ForeignKey("devices.id"), index=True)
+    event_id: Mapped[str] = mapped_column(String(64))
+    event_version: Mapped[int] = mapped_column(Integer)
+    rule_id: Mapped[str] = mapped_column(String(64))
+    event_status: Mapped[str] = mapped_column(String(24))
+    status: Mapped[str] = mapped_column(String(24), index=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime())
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime())
+    lease_until: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    response: Mapped[dict | None] = mapped_column(JSON)
+
+
+class ConversationRow(Base):
+    __tablename__ = "conversation_memory"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    device_id: Mapped[str] = mapped_column(ForeignKey("devices.id"))
+    session_id: Mapped[str] = mapped_column(String(64))
+    request_id: Mapped[str] = mapped_column(String(64))
+    user_text: Mapped[str] = mapped_column(Text)
+    response: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime())
+    __table_args__ = (
+        Index("ix_conversation_scope", "device_id", "session_id", "id"),
+        Index("uq_conversation_request", "device_id", "session_id", "request_id", unique=True),
+    )
 
 
 def build_engine(url: str):

@@ -13,7 +13,7 @@
 | --- | --- | --- |
 | GET | `/api/v1/llm/personality` | 讀取 MEMO 預設人格 |
 | POST | `/api/v1/llm/prepare` | 產生 system_prompt、user_prompt 與 output_schema；不呼叫模型 |
-| POST | `/api/v1/llm/respond` | 產生文字與情緒；目前固定使用模板 |
+| POST | `/api/v1/llm/respond` | 產生文字與情緒；模型生成，失敗時模板備援 |
 
 兩個 POST 共用 `InteractionRequest`。成功回 200，欄位不合法回 422。
 
@@ -129,13 +129,13 @@ Invoke-RestMethod http://localhost:8000/api/v1/llm/respond -Method Post -Content
 
 `POST /api/v1/devices/{device_id}/interaction` 接受 `user_message`、`request_id` 與 `personality`。後端自行查詢該裝置最新讀值，沿用資料品質與時效檢查，回傳 `text`、`emotion`、`warnings`，以及 `context_source: stored_readings`。不接受瀏覽器提交環境 context；不存在的裝置回傳 404。
 
-獨立 3D 網頁的啟動及 CORS 設定見 [memo_demo](../memo_demo/README.md)。目前裝置互動仍使用模板產生器。
+獨立 3D 網頁的啟動及 CORS 設定見 [memo_demo](../memo_demo/README.md)。裝置互動已支援模型、持久化對話與獨立任務記憶，見 [執行說明](companion-runtime.md)。
 
-## 後續模型串接
+## 模型與事件串接
 
-`application/interaction.py` 定義 `ReplyGenerator` 介面，`infrastructure/template_reply.py` 是目前 adapter。`main.py` 負責組裝；Domain / Application 不依賴 FastAPI 或 Pydantic。
+`infrastructure/model_reply.py` 實作 Chat Completions 相容呼叫、逾時與輸出驗證；`main.py` 注入 `ReplyGenerator`。API 回傳 `source: model | template` 和 `fallback_reason`，設定與完整行為見 [執行說明](companion-runtime.md)。
 
-`/prepare` 把固定角色規範放在 system_prompt，把使用者訊息與篩選後上下文序列化成 user_prompt，並提供 output_schema。模型 adapter 日後應驗證 JSON 結構，實作逾時與失敗備援，並在投遞前核對事件版本；這些外部模型與事件投遞流程尚未實作。Prompt 的資料分隔不代表已具備完整提示注入防護。
+`/prepare` 保留 system/user 資料分離與輸出 schema。裝置互動從後端讀取環境與記憶；主動通知以任務形式生成，投遞前重查事件版本與時效。無狀態 `/llm/respond` 的呼叫端事件仍不視為後端已核對事件。
 
 修改 schema 後重新匯出：
 

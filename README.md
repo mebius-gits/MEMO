@@ -30,7 +30,7 @@ Swagger：http://127.0.0.1:8000/docs；OpenAPI：http://127.0.0.1:8000/openapi.j
 
 環境變數統一使用 `MEMO_` 前綴。將 `.env.example` 複製為 `.env` 後設定；Compose API 也會載入這個檔案，容器資料庫仍使用 `/data/memo.db`。
 
-模型連線預留 `MEMO_LLM_BASE_URL`（含 API 版本路徑）、`MEMO_LLM_MODEL`、`MEMO_LLM_API_KEY`、`MEMO_LLM_TIMEOUT_SECONDS`。目前回覆仍使用模板，這些設定尚未啟用外部模型呼叫。API key 僅放後端，設定物件以 `SecretStr` 遮蔽顯示。
+模型連線使用 `MEMO_LLM_BASE_URL`（含 API 版本路徑）、`MEMO_LLM_MODEL`、`MEMO_LLM_API_KEY`、`MEMO_LLM_TIMEOUT_SECONDS`。填入 URL 與模型名稱後會實際呼叫 Chat Completions 相容端點；未設定或呼叫失敗時使用明確標示的備援回覆。API key 僅放後端，設定物件以 `SecretStr` 遮蔽顯示。
 
 升級既有安裝時，請同步更新環境變數名稱與 MQTT 發布端的 `memo/v1/` topic。既有本機資料庫需搬移至新預設路徑，或用 `MEMO_DATABASE_URL` 指向原資料庫；Docker volume 路徑沒有變更。
 
@@ -103,16 +103,18 @@ MEMO_DATABASE_URL=postgresql+psycopg://memo:password@localhost:5432/memo
 
 ## LLM 輸入、人格與文字／情緒契約
 
-已提供 `/api/v1/llm/personality`、`/api/v1/llm/prepare`、`/api/v1/llm/respond`。目前使用明確標示來源的模板，不呼叫外部模型。人格可依請求設定 gentle / lively / concise；輸出包含 text 與 emotion（label、intensity）。
+已提供 `/api/v1/llm/personality`、`/api/v1/llm/prepare`、`/api/v1/llm/respond`。已實作模型呼叫、格式驗證與模板備援。人格可依請求設定 gentle / lively / concise；輸出包含 text 與 emotion（label、intensity）。
 
 詳見 [LLM 介面說明](docs/llm-api.md)、[OpenAPI YAML](docs/openapi.yaml) 與 [模型輸出 JSON Schema](docs/llm-output.schema.json)。
+
+模型、任務／對話記憶、環境事件與六分鐘 CO₂ 劇本已實作，見 [執行說明](docs/companion-runtime.md)。
 
 ## 下一階段
 
 - 正式設備接入與帳號／ACL／TLS（WSL Docker、Mosquitto、Worker 落庫及離線補收已驗證）。
 - 每個指標個別品質判斷、時鐘偏差、最新有效狀態與 stale 偵測。
-- 規則窗口、持續與恢復、事件、outbox 與通知 worker。
-- 持久化人格設定、事件操作、真實 LLM 串接、對話儲存與追蹤排程（已有 LLM 契約及模板預覽）。
+- 通知合併、使用者延後提醒、勿擾時段與裝置投遞。
+- 持久化人格設定、自然語言任務操作與處理後追蹤排程。
 - 身分驗證與裝置授權（目前是本機開發雛形）。
 
 以上功能尚未實作，完整規劃仍以 `environment_ai_plan.md` 為準。

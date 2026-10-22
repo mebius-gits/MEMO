@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Request
 
+from memo.application.companion import CompanionService
 from memo.application.interaction import InteractionService
 from memo.domain.interaction import EventContext, InteractionInput, Observation, Personality
 from memo.presentation.interaction_schemas import (
@@ -13,7 +14,7 @@ from memo.presentation.interaction_schemas import (
     PersonalityConfig,
     PreparedResponse,
 )
-from memo.presentation.routes import Service
+from memo.presentation.memory_routes import Memory
 
 router = APIRouter(prefix="/api/v1/llm", tags=["MEMO interaction"])
 device_router = APIRouter(prefix="/api/v1/devices", tags=["MEMO interaction"])
@@ -54,37 +55,15 @@ def get_personality():
 def device_interaction(
     device_id: str,
     payload: DeviceInteractionRequest,
-    environment: Service,
+    memory: Memory,
     service: InteractionService = Depends(get_interaction_service),
 ):
-    # No browser-supplied observation or event is accepted by this endpoint.
-    rows = environment.history(device_id, None, None, 1, 0)
-    latest = rows[0] if rows else None
-    request = InteractionInput(
-        user_message=payload.user_message,
-        personality=Personality(**payload.personality.model_dump()),
-        device_id=device_id,
-        observation=Observation(
-            latest.observed_at,
-            {
-                "temperature_c": latest.temperature_c,
-                "humidity_pct": latest.humidity_pct,
-                "co2_ppm": latest.co2_ppm,
-            },
-            latest.quality,
-        )
-        if latest
-        else None,
-        context_source="stored_readings",
-    )
-    prepared = service.prepare(request, datetime.now(timezone.utc))
-    reply = service.respond(prepared)
-    return InteractionResponse(
-        request_id=payload.request_id,
-        text=reply.text,
-        emotion=EmotionOutput(label=reply.emotion, intensity=reply.intensity),
-        context_source="stored_readings",
-        warnings=list(prepared.warnings),
+    return CompanionService(memory, service).chat(
+        device_id,
+        payload.session_id,
+        str(payload.request_id),
+        payload.user_message,
+        Personality(**payload.personality.model_dump()),
     )
 
 
@@ -106,7 +85,7 @@ def prepare(
 
 
 @router.post(
-    "/respond", response_model=InteractionResponse, summary="產生 MEMO 文字與情緒（目前為模板預覽）"
+    "/respond", response_model=InteractionResponse, summary="產生 MEMO 文字與情緒（模型或備援回覆）"
 )
 def respond(
     payload: InteractionRequest,
@@ -117,6 +96,8 @@ def respond(
     event = payload.context.event
     return InteractionResponse(
         request_id=payload.request_id,
+        source=reply.source,
+        fallback_reason=reply.fallback_reason,
         text=reply.text,
         emotion=EmotionOutput(label=reply.emotion, intensity=reply.intensity),
         event_id=event.event_id if event else None,
