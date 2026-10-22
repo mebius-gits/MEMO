@@ -1,0 +1,38 @@
+name: memo
+
+services:
+  api:
+    build: .
+    restart: unless-stopped
+    environment:
+      BUDDY_APP_NAME: MEMO
+      BUDDY_DATABASE_URL: sqlite:////data/memo.db
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - memo-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  node-red:
+    build: ./node-red
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      TZ: Asia/Taipei
+      MEMO_API_URL: http://api:8000
+      MEMO_DEVICE_ID: room01
+    ports:
+      - "127.0.0.1:1880:1880"
+    volumes:
+      - node-red-data:/data
+
+volumes:
+  memo-data:
+  node-red-data:

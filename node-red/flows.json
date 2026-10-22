@@ -1,0 +1,670 @@
+[
+  {
+    "id": "memo-flow",
+    "type": "tab",
+    "label": "MEMO 環境感測範例",
+    "disabled": false,
+    "info": "按「送出一筆模擬資料」：註冊 room01、寫入溫濕度與 CO2、查詢歷史。使用內建節點。"
+  },
+  {
+    "id": "instructions",
+    "type": "comment",
+    "z": "memo-flow",
+    "name": "點按模擬資料，自動註冊、寫入、查詢；右側 Debug 查看結果",
+    "x": 380,
+    "y": 60,
+    "wires": [],
+    "info": "每次點按新增一筆模擬資料；非實際環境觀測。"
+  },
+  {
+    "id": "simulate",
+    "type": "inject",
+    "z": "memo-flow",
+    "name": "送出一筆模擬資料",
+    "x": 160,
+    "y": 140,
+    "wires": [
+      [
+        "register-build"
+      ]
+    ],
+    "props": [
+      {
+        "p": "payload"
+      },
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 2,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date"
+  },
+  {
+    "id": "register-build",
+    "type": "function",
+    "z": "memo-flow",
+    "name": "準備裝置註冊",
+    "x": 390,
+    "y": 140,
+    "wires": [
+      [
+        "register-http"
+      ]
+    ],
+    "func": "const base = (env.get('MEMO_API_URL') || 'http://api:8000').replace(/\\/$/, '');\nconst device = env.get('MEMO_DEVICE_ID') || 'room01';\nmsg.method = 'POST';\nmsg.url = base + '/api/v1/devices';\nmsg.headers = {'Content-Type':'application/json'};\nmsg.payload = {id: device, name: 'MEMO 模擬裝置', location:'示範空間'};\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": []
+  },
+  {
+    "id": "register-http",
+    "type": "http request",
+    "z": "memo-flow",
+    "name": "POST /devices",
+    "x": 620,
+    "y": 140,
+    "wires": [
+      [
+        "register-status"
+      ]
+    ],
+    "method": "use",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": []
+  },
+  {
+    "id": "register-status",
+    "type": "switch",
+    "z": "memo-flow",
+    "name": "新增或已存在",
+    "x": 850,
+    "y": 140,
+    "wires": [
+      [
+        "telemetry-build"
+      ],
+      [
+        "telemetry-build"
+      ],
+      [
+        "failure"
+      ]
+    ],
+    "property": "statusCode",
+    "propertyType": "msg",
+    "rules": [
+      {
+        "t": "eq",
+        "v": "201",
+        "vt": "num"
+      },
+      {
+        "t": "eq",
+        "v": "409",
+        "vt": "num"
+      },
+      {
+        "t": "else"
+      }
+    ],
+    "checkall": "false",
+    "repair": false,
+    "outputs": 3
+  },
+  {
+    "id": "telemetry-build",
+    "type": "function",
+    "z": "memo-flow",
+    "name": "建立模擬感測資料",
+    "x": 390,
+    "y": 260,
+    "wires": [
+      [
+        "telemetry-http"
+      ]
+    ],
+    "func": "const base = (env.get('MEMO_API_URL') || 'http://api:8000').replace(/\\/$/, '');\nconst device = env.get('MEMO_DEVICE_ID') || 'room01';\nmsg.method = 'POST';\nmsg.url = base + '/api/v1/telemetry';\nmsg.headers = {'Content-Type':'application/json'};\nmsg.payload = {schema_version:1, message_id:device + '-' + Date.now() + '-' + msg._msgid, device_id:device, observed_at:new Date().toISOString(), sequence:1, metrics:{temperature_c:29.2, humidity_pct:65, co2_ppm:1100}, quality:'ok'};\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": []
+  },
+  {
+    "id": "telemetry-http",
+    "type": "http request",
+    "z": "memo-flow",
+    "name": "POST /telemetry",
+    "x": 620,
+    "y": 260,
+    "wires": [
+      [
+        "telemetry-status"
+      ]
+    ],
+    "method": "use",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": []
+  },
+  {
+    "id": "telemetry-status",
+    "type": "switch",
+    "z": "memo-flow",
+    "name": "寫入成功？",
+    "x": 850,
+    "y": 260,
+    "wires": [
+      [
+        "history-build"
+      ],
+      [
+        "failure"
+      ]
+    ],
+    "property": "statusCode",
+    "propertyType": "msg",
+    "rules": [
+      {
+        "t": "eq",
+        "v": "200",
+        "vt": "num"
+      },
+      {
+        "t": "else"
+      }
+    ],
+    "checkall": "false",
+    "repair": false,
+    "outputs": 2
+  },
+  {
+    "id": "history-inject",
+    "type": "inject",
+    "z": "memo-flow",
+    "name": "查詢最近 10 筆",
+    "x": 160,
+    "y": 380,
+    "wires": [
+      [
+        "history-build"
+      ]
+    ],
+    "props": [
+      {
+        "p": "payload"
+      },
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 2,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date"
+  },
+  {
+    "id": "history-build",
+    "type": "function",
+    "z": "memo-flow",
+    "name": "準備歷史查詢",
+    "x": 390,
+    "y": 380,
+    "wires": [
+      [
+        "history-http"
+      ]
+    ],
+    "func": "const base = (env.get('MEMO_API_URL') || 'http://api:8000').replace(/\\/$/, '');\nconst device = env.get('MEMO_DEVICE_ID') || 'room01';\nmsg.method = 'GET';\nmsg.url = base + '/api/v1/devices/' + encodeURIComponent(device) + '/readings?limit=10';\nmsg.headers = {};\ndelete msg.payload;\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": []
+  },
+  {
+    "id": "history-http",
+    "type": "http request",
+    "z": "memo-flow",
+    "name": "GET /readings",
+    "x": 620,
+    "y": 380,
+    "wires": [
+      [
+        "history-status"
+      ]
+    ],
+    "method": "use",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": []
+  },
+  {
+    "id": "history-status",
+    "type": "switch",
+    "z": "memo-flow",
+    "name": "查詢成功？",
+    "x": 850,
+    "y": 380,
+    "wires": [
+      [
+        "history-debug"
+      ],
+      [
+        "failure"
+      ]
+    ],
+    "property": "statusCode",
+    "propertyType": "msg",
+    "rules": [
+      {
+        "t": "eq",
+        "v": "200",
+        "vt": "num"
+      },
+      {
+        "t": "else"
+      }
+    ],
+    "checkall": "false",
+    "repair": false,
+    "outputs": 2
+  },
+  {
+    "id": "history-debug",
+    "type": "debug",
+    "z": "memo-flow",
+    "name": "感測歷史（最新在前）",
+    "x": 1100,
+    "y": 380,
+    "wires": [],
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto"
+  },
+  {
+    "id": "health-inject",
+    "type": "inject",
+    "z": "memo-flow",
+    "name": "啟動／手動檢查 API",
+    "x": 160,
+    "y": 500,
+    "wires": [
+      [
+        "health-build"
+      ]
+    ],
+    "props": [
+      {
+        "p": "payload"
+      },
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": true,
+    "onceDelay": 2,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date"
+  },
+  {
+    "id": "health-build",
+    "type": "function",
+    "z": "memo-flow",
+    "name": "準備健康檢查",
+    "x": 390,
+    "y": 500,
+    "wires": [
+      [
+        "health-http"
+      ]
+    ],
+    "func": "const base = (env.get('MEMO_API_URL') || 'http://api:8000').replace(/\\/$/, '');\nconst device = env.get('MEMO_DEVICE_ID') || 'room01';\nmsg.method = 'GET';\nmsg.url = base + '/health/ready';\nmsg.headers = {};\ndelete msg.payload;\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": []
+  },
+  {
+    "id": "health-http",
+    "type": "http request",
+    "z": "memo-flow",
+    "name": "GET /health/ready",
+    "x": 620,
+    "y": 500,
+    "wires": [
+      [
+        "health-status"
+      ]
+    ],
+    "method": "use",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": []
+  },
+  {
+    "id": "health-status",
+    "type": "switch",
+    "z": "memo-flow",
+    "name": "API 就緒？",
+    "x": 850,
+    "y": 500,
+    "wires": [
+      [
+        "health-debug"
+      ],
+      [
+        "failure"
+      ]
+    ],
+    "property": "statusCode",
+    "propertyType": "msg",
+    "rules": [
+      {
+        "t": "eq",
+        "v": "200",
+        "vt": "num"
+      },
+      {
+        "t": "else"
+      }
+    ],
+    "checkall": "false",
+    "repair": false,
+    "outputs": 2
+  },
+  {
+    "id": "health-debug",
+    "type": "debug",
+    "z": "memo-flow",
+    "name": "API 已就緒",
+    "x": 1100,
+    "y": 500,
+    "wires": [],
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg"
+  },
+  {
+    "id": "catch",
+    "type": "catch",
+    "z": "memo-flow",
+    "name": "連線／節點錯誤",
+    "x": 620,
+    "y": 620,
+    "wires": [
+      [
+        "failure"
+      ]
+    ],
+    "scope": null,
+    "uncaught": false
+  },
+  {
+    "id": "failure",
+    "type": "debug",
+    "z": "memo-flow",
+    "name": "錯誤（statusCode / payload / error）",
+    "x": 1080,
+    "y": 620,
+    "wires": [],
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "true",
+    "targetType": "full"
+  },
+  {
+    "id": "memo-llm",
+    "type": "tab",
+    "label": "MEMO 文字與情緒",
+    "disabled": false,
+    "info": "模板預覽，尚未呼叫外部 LLM。人格可在準備請求節點修改。"
+  },
+  {
+    "id": "llm-note",
+    "type": "comment",
+    "z": "memo-llm",
+    "name": "模板預覽：點按後查看文字、情緒與來源",
+    "x": 350,
+    "y": 60,
+    "wires": [],
+    "info": "數值為本次請求模擬資料，不會寫入資料庫。"
+  },
+  {
+    "id": "llm-inject",
+    "type": "inject",
+    "z": "memo-llm",
+    "name": "測試 MEMO 文字＋情緒",
+    "x": 170,
+    "y": 160,
+    "wires": [
+      [
+        "llm-build"
+      ]
+    ],
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "payload": "",
+    "payloadType": "date",
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": ""
+  },
+  {
+    "id": "llm-build",
+    "type": "function",
+    "z": "memo-llm",
+    "name": "設定人格與模擬上下文",
+    "x": 430,
+    "y": 160,
+    "wires": [
+      [
+        "llm-http"
+      ]
+    ],
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "func": "const base = (env.get('MEMO_API_URL') || 'http://api:8000').replace(/\\/$/, '');\nmsg.method = 'POST';\nmsg.url = base + '/api/v1/llm/respond';\nmsg.headers = {'Content-Type':'application/json'};\nmsg.payload = {\n  user_message:'MEMO，請摘要這筆模擬環境資料。',\n  personality:{name:'MEMO', language:'zh-TW', tone:'gentle'},\n  context:{device_id:env.get('MEMO_DEVICE_ID') || 'room01', observation:{\n    observed_at:new Date().toISOString(),\n    metrics:{temperature_c:29.2, humidity_pct:65, co2_ppm:1100}, quality:'ok'\n  }}\n};\nreturn msg;"
+  },
+  {
+    "id": "llm-http",
+    "type": "http request",
+    "z": "memo-llm",
+    "name": "POST /llm/respond",
+    "x": 690,
+    "y": 160,
+    "wires": [
+      [
+        "llm-status"
+      ]
+    ],
+    "method": "use",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": []
+  },
+  {
+    "id": "llm-status",
+    "type": "switch",
+    "z": "memo-llm",
+    "name": "回覆成功？",
+    "x": 910,
+    "y": 160,
+    "wires": [
+      [
+        "llm-text",
+        "llm-emotion",
+        "llm-full"
+      ],
+      [
+        "llm-error"
+      ]
+    ],
+    "property": "statusCode",
+    "propertyType": "msg",
+    "rules": [
+      {
+        "t": "eq",
+        "v": "200",
+        "vt": "num"
+      },
+      {
+        "t": "else"
+      }
+    ],
+    "checkall": "false",
+    "repair": false,
+    "outputs": 2
+  },
+  {
+    "id": "llm-text",
+    "type": "debug",
+    "z": "memo-llm",
+    "name": "MEMO 文字",
+    "x": 1170,
+    "y": 100,
+    "wires": [],
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload.text",
+    "targetType": "msg"
+  },
+  {
+    "id": "llm-emotion",
+    "type": "debug",
+    "z": "memo-llm",
+    "name": "MEMO 情緒與強度",
+    "x": 1170,
+    "y": 180,
+    "wires": [],
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload.emotion",
+    "targetType": "msg"
+  },
+  {
+    "id": "llm-full",
+    "type": "debug",
+    "z": "memo-llm",
+    "name": "完整回應（含來源）",
+    "x": 1170,
+    "y": 260,
+    "wires": [],
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg"
+  },
+  {
+    "id": "llm-catch",
+    "type": "catch",
+    "z": "memo-llm",
+    "name": "節點連線錯誤",
+    "x": 690,
+    "y": 360,
+    "wires": [
+      [
+        "llm-error"
+      ]
+    ],
+    "scope": null,
+    "uncaught": false
+  },
+  {
+    "id": "llm-error",
+    "type": "debug",
+    "z": "memo-llm",
+    "name": "LLM 介面錯誤",
+    "x": 1160,
+    "y": 360,
+    "wires": [],
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "true",
+    "targetType": "full"
+  }
+]
