@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Request
 from memo.application.interaction import InteractionService
 from memo.domain.interaction import EventContext, InteractionInput, Observation, Personality
 from memo.presentation.interaction_schemas import (
+    DeviceInteractionRequest,
     EmotionOutput,
     InteractionRequest,
     InteractionResponse,
@@ -12,8 +13,10 @@ from memo.presentation.interaction_schemas import (
     PersonalityConfig,
     PreparedResponse,
 )
+from memo.presentation.routes import Service
 
 router = APIRouter(prefix="/api/v1/llm", tags=["MEMO interaction"])
+device_router = APIRouter(prefix="/api/v1/devices", tags=["MEMO interaction"])
 
 
 def get_interaction_service(request: Request) -> InteractionService:
@@ -41,6 +44,48 @@ def to_input(payload: InteractionRequest) -> InteractionInput:
 @router.get("/personality", response_model=PersonalityConfig, summary="取得 MEMO 預設人格")
 def get_personality():
     return PersonalityConfig()
+
+
+@device_router.post(
+    "/{device_id}/interaction",
+    response_model=InteractionResponse,
+    summary="從後端資料庫取得裝置最新讀值，產生 MEMO 回覆",
+)
+def device_interaction(
+    device_id: str,
+    payload: DeviceInteractionRequest,
+    environment: Service,
+    service: InteractionService = Depends(get_interaction_service),
+):
+    # No browser-supplied observation or event is accepted by this endpoint.
+    rows = environment.history(device_id, None, None, 1, 0)
+    latest = rows[0] if rows else None
+    request = InteractionInput(
+        user_message=payload.user_message,
+        personality=Personality(**payload.personality.model_dump()),
+        device_id=device_id,
+        observation=Observation(
+            latest.observed_at,
+            {
+                "temperature_c": latest.temperature_c,
+                "humidity_pct": latest.humidity_pct,
+                "co2_ppm": latest.co2_ppm,
+            },
+            latest.quality,
+        )
+        if latest
+        else None,
+        context_source="stored_readings",
+    )
+    prepared = service.prepare(request, datetime.now(timezone.utc))
+    reply = service.respond(prepared)
+    return InteractionResponse(
+        request_id=payload.request_id,
+        text=reply.text,
+        emotion=EmotionOutput(label=reply.emotion, intensity=reply.intensity),
+        context_source="stored_readings",
+        warnings=list(prepared.warnings),
+    )
 
 
 @router.post(

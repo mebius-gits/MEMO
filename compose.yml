@@ -6,6 +6,7 @@ services:
     restart: unless-stopped
     environment:
       BUDDY_APP_NAME: MEMO
+      BUDDY_CORS_ORIGINS: '["http://localhost:5173","http://127.0.0.1:5173","https://memo-quiet-room.fancyhen36.chatgpt.site"]'
       BUDDY_DATABASE_URL: sqlite:////data/memo.db
     ports:
       - "127.0.0.1:8000:8000"

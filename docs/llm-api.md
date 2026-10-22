@@ -125,6 +125,12 @@ Invoke-RestMethod http://localhost:8000/api/v1/llm/respond -Method Post -Content
 
 事件 ID 與版本由伺服器從請求附回，未交由文字生成器改寫。模板不理解任意問句、不執行確認／延後等動作，也不做環境異常判斷；history、user_message 與 approved_suggestions 會包含在 `/prepare` 的 user_prompt 中，目前模板不使用它們生成自由文字。
 
+## 網頁裝置互動
+
+`POST /api/v1/devices/{device_id}/interaction` 接受 `user_message`、`request_id` 與 `personality`。後端自行查詢該裝置最新讀值，沿用資料品質與時效檢查，回傳 `text`、`emotion`、`warnings`，以及 `context_source: stored_readings`。不接受瀏覽器提交環境 context；不存在的裝置回傳 404。
+
+獨立 3D 網頁的啟動及 CORS 設定見 [memo_demo](../memo_demo/README.md)。目前裝置互動仍使用模板產生器。
+
 ## 後續模型串接
 
 `application/interaction.py` 定義 `ReplyGenerator` 介面，`infrastructure/template_reply.py` 是目前 adapter。`main.py` 負責組裝；Domain / Application 不依賴 FastAPI 或 Pydantic。

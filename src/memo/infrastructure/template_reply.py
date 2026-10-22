@@ -24,7 +24,12 @@ class TemplateReplyGenerator:
                 f"{labels[key][0]} {value:g}{labels[key][1]}"
                 for key, value in prepared.usable_metrics.items()
             ]
-            parts.append("你提供的近期讀值為：" + "、".join(values) + "。")
+            source_label = (
+                "後端儲存的近期讀值為："
+                if prepared.input.context_source == "stored_readings"
+                else "你提供的近期讀值為："
+            )
+            parts.append(source_label + "、".join(values) + "。")
             parts.append("這些數值本身不代表環境已被判定正常或異常。")
         else:
             parts.append("目前沒有可用的近期環境讀值，無法判斷目前環境狀態。")

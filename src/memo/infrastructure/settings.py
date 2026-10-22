@@ -7,6 +7,7 @@ class Settings(BaseSettings):
 
     app_name: str = "MEMO"
     database_url: str = "sqlite:///./buddy.db"
+    cors_origins: list[str] = []
 
 
 class MqttSettings(BaseSettings):

@@ -48,6 +48,7 @@ class InteractionInput:
     device_id: str | None = None
     approved_suggestions: tuple[str, ...] = ()
     history: tuple[dict[str, str], ...] = ()
+    context_source: str = "caller_supplied"
 
 
 @dataclass(frozen=True)

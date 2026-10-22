@@ -245,6 +245,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/interaction:
+    post:
+      tags:
+      - MEMO interaction
+      summary: 從後端資料庫取得裝置最新讀值，產生 MEMO 回覆
+      operationId: device_interaction_api_v1_devices__device_id__interaction_post
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceInteractionRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InteractionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /health/live:
     get:
       tags:
@@ -271,6 +303,24 @@ paths:
               schema: {}
 components:
   schemas:
+    DeviceInteractionRequest:
+      properties:
+        request_id:
+          type: string
+          format: uuid
+          title: Request Id
+        user_message:
+          type: string
+          maxLength: 2000
+          minLength: 1
+          title: User Message
+        personality:
+          $ref: '#/components/schemas/PersonalityConfig'
+      additionalProperties: false
+      type: object
+      required:
+      - user_message
+      title: DeviceInteractionRequest
     DeviceSchema:
       properties:
         id:
@@ -474,7 +524,9 @@ components:
           default: model_not_configured
         context_source:
           type: string
-          const: caller_supplied
+          enum:
+          - caller_supplied
+          - stored_readings
           title: Context Source
           default: caller_supplied
         event_id:
