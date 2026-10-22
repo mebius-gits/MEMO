@@ -36,13 +36,14 @@
           <div id="messages" class="messages" role="log" aria-live="polite"><div class="message memo"><span class="avatar">m</span><div><p>嗨，我是 MEMO。<br>我就在這裡，陪你看看今天的空間。</p><small>招呼語 · 尚未讀取環境</small></div></div></div>
           <button id="ask-summary" class="suggestion">現在的環境如何？ <span>↗</span></button>
           <form id="chat-form"><label class="sr-only" for="chat-input">想對 MEMO 說什麼？</label><input id="chat-input" placeholder="想對 MEMO 說什麼？" maxlength="2000" autocomplete="off" required /><button id="send-message" type="submit" aria-label="傳送訊息">↑</button></form>
-          <p class="conversation-note">文字與情緒由後端回傳 · 目前為模板模式</p>
+          <p class="conversation-note">我會記住這段對話，也會主動告訴你空間的變化。</p>
         </section>
       </aside>
       <section class="simulation" aria-label="環境模擬工具">
         <button id="simulation-toggle" aria-expanded="false" aria-controls="simulation-body"><span class="simulation-icon">⏣</span><span><b>試著改變小環境</b><small>寫入獨立的模擬裝置，看看 MEMO 的回應。</small></span><span class="simulation-label">SIMULATION</span><span id="simulation-arrow">＋</span></button>
         <div id="simulation-body" hidden><div class="sliders"><label>溫度 <output id="sim-temperature-output">26 °C</output><input id="sim-temperature" type="range" min="10" max="40" step="0.5" value="26" /></label><label>濕度 <output id="sim-humidity-output">60 %</output><input id="sim-humidity" type="range" min="10" max="95" value="60" /></label><label>CO₂ <output id="sim-co2-output">800 ppm</output><input id="sim-co2" type="range" min="400" max="2500" step="50" value="800" /></label></div><div class="simulation-actions"><p>僅寫入 <code>memo-web-demo</code>，不覆寫實體裝置資料。<br>感測值不直接決定情緒或告警。</p><button id="publish-simulation" class="primary-button">送出模擬讀值 ↗</button></div></div>
       </section>
+      <section class="simulation scenario" aria-label="CO₂ 情境劇本"><div class="simulation-actions" style="padding:20px 24px;margin:0"><div><b>陪 MEMO 看一次空間的變化</b><p>約 6 分鐘：平穩 → CO₂ 升高 → 主動提醒 → 回穩。<br>使用獨立模擬裝置；請保持分頁開啟。中斷或背景節流會延後確認。</p><small id="scenario-status" role="status">準備好，就一起開始。</small></div><button id="start-scenario" class="primary-button">開始 CO₂ 劇本</button><button id="stop-scenario" class="secondary-button" disabled>停止</button></div></section>
     </main>
     <footer><span>MEMO <i>·</i> Little moments, better together.</span><span>一個小夥伴，一點點安心。</span></footer>
     <div id="toast" role="status" hidden></div>

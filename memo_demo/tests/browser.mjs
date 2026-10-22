@@ -24,7 +24,7 @@ try {
   await page.locator('#publish-simulation').click();
   await page.waitForFunction(() => document.querySelector('#mood-label').textContent === '溫柔陪伴');
   assert.equal(await page.locator('#temperature-value').textContent(), '26.0');
-  assert.ok((await page.locator('#messages').textContent()).includes('後端儲存的近期讀值'));
+  assert.ok((await page.locator('#messages').textContent()).includes('我有收到空間的新消息'));
   await page.locator('#simulation-toggle').click();
   await page.locator('#pause-motion').click();
   await page.screenshot({ path: 'test-results/desktop.png', fullPage: true });

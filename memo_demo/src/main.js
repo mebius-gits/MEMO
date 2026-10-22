@@ -6,6 +6,10 @@ const storage = { get(key) { try { return localStorage.getItem(key); } catch { r
 const defaultApiBase = (import.meta.env.VITE_MEMO_API_URL || '').trim();
 let apiBase = storage.get('memo.apiBase') ?? defaultApiBase, activeDevice = '', readings = [], devices = [];
 let refreshing = false, chatting = false, generation = 0, toastTimer, connected = false;
+const sessionId = storage.get('memo.sessionId') || crypto.randomUUID();
+storage.set('memo.sessionId', sessionId);
+let conversationScope = '', scenarioTimer, scenarioRunning = false;
+const seenNotifications = new Set();
 let companion;
 try { companion = createMemoScene($('#scene')); } catch (error) { $('#webgl-fallback').hidden = false; console.warn('3D unavailable', error.message); }
 if (companion?.paused) { $('#pause-motion').textContent = '▷'; $('#pause-motion').setAttribute('aria-label', '恢復動態'); }
@@ -23,7 +27,7 @@ function normalizeUrl(value) {
 async function request(path, options = {}, base = apiBase) {
   if (!base) throw new Error('請先連接你的 MEMO 後端。');
   let response;
-  try { response = await fetch(`${base}${path}`, { ...options, signal: AbortSignal.timeout(12000), headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers } }); }
+  try { response = await fetch(`${base}${path}`, { ...options, signal: AbortSignal.timeout(path.endsWith('/interaction') ? 45000 : 12000), headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers } }); }
   catch { throw new Error('無法連接後端。請檢查網址、HTTPS、CORS 或網路連線。'); }
   if (!response.ok) {
     const error = new Error(response.status === 404 ? '找不到這個裝置或 API，請確認後端已更新。' : `後端回應錯誤（${response.status}），請稍後再試。`);
@@ -78,6 +82,7 @@ async function refresh(showErrors = false) {
     const resultReadings = selected ? await request(`/api/v1/devices/${encodeURIComponent(selected)}/readings?limit=24`) : [];
     if (currentGeneration !== generation || selected !== activeDevice) return;
     readings = resultReadings; connection(true, '已連接後端'); renderReadings();
+    if (selected) await syncCompanion(selected, currentGeneration);
   } catch (error) { if (currentGeneration !== generation) return; connection(false, '後端連線中斷'); $('#freshness').classList.remove('live'); $('#freshness').textContent = '連線中斷'; $('#data-note').textContent = '連線中斷，畫面保留最後一次讀值。'; if (showErrors) toast(error.message); }
   finally { refreshing = false; }
 }
@@ -116,7 +121,7 @@ async function chat(text) {
   message(text, 'user'); $('#chat-input').value = '';
   const waiting = message('讓我看看你空間裡的資料…', 'memo');
   try {
-    const reply = await request(`/api/v1/devices/${encodeURIComponent(selected)}/interaction`, { method: 'POST', body: JSON.stringify({ user_message: text, personality: { tone: $('#tone').value } }) });
+    const reply = await request(`/api/v1/devices/${encodeURIComponent(selected)}/interaction`, { method: 'POST', body: JSON.stringify({ session_id: sessionId, request_id: crypto.randomUUID(), user_message: text, personality: { tone: $('#tone').value } }) });
     waiting.remove();
     if (generation !== currentGeneration) { message('裝置已切換，已略過上一個裝置的回覆。', 'memo'); return; }
     message(reply.text, 'memo', `${reply.source === 'template' ? '模板回覆' : '模型回覆'} · 後端資料庫 · ${selected}`);
@@ -145,9 +150,66 @@ $('#publish-simulation').onclick = async () => {
   } catch (error) { toast(error.message); }
   finally { button.disabled = false; }
 };
+function showEmotion(emotion) {
+  $('#mood-label').textContent = moodLabels[emotion.label] || moodLabels.neutral;
+  $('#mood-face').textContent = emotion.label === 'confused' ? '?' : '?';
+  companion?.setEmotion(emotion.label, emotion.intensity);
+}
+async function syncCompanion(device, currentGeneration) {
+  const scope = `${apiBase}/${device}/${sessionId}`;
+  if (conversationScope !== scope) {
+    const turns = await request(`/api/v1/devices/${encodeURIComponent(device)}/memory/conversation?session_id=${sessionId}`);
+    if (generation !== currentGeneration || activeDevice !== device) return;
+    $('#messages').replaceChildren();
+    for (const turn of turns) { message(turn.user_text, 'user'); message(turn.response.text, 'memo', '對話記憶'); }
+    if (!turns.length) message('我在這裡。空間有值得留意的變化時，我會輕輕告訴你。', 'memo');
+    conversationScope = scope;
+  }
+  const tasks = await request(`/api/v1/devices/${encodeURIComponent(device)}/notifications`);
+  if (generation !== currentGeneration || activeDevice !== device) return;
+  for (const task of tasks) {
+    if (!seenNotifications.has(task.id)) {
+      message(task.response.text, 'memo', task.event_status === 'resolved' ? '主動回應 · 已恢復穩定' : '主動提醒');
+      showEmotion(task.response.emotion); seenNotifications.add(task.id);
+    }
+    try { await request(`/api/v1/devices/${encodeURIComponent(device)}/notifications/ack`, { method: 'POST', body: JSON.stringify({ task_id: task.id }) }); }
+    catch (error) { if (error.status !== 409) throw error; }
+  }
+}
+function stopScenario(note = '劇本已停止；停止送資料不代表環境恢復。') {
+  clearTimeout(scenarioTimer); scenarioRunning = false;
+  $('#start-scenario').disabled = false; $('#stop-scenario').disabled = true;
+  $('#scenario-status').textContent = note;
+}
+$('#stop-scenario').onclick = () => stopScenario();
+$('#start-scenario').onclick = async () => {
+  if (!apiBase) { $('#settings-button').click(); return; }
+  if (scenarioRunning) return;
+  scenarioRunning = true; $('#start-scenario').disabled = true; $('#stop-scenario').disabled = false;
+  const base = apiBase, device = `memo-scene-${Date.now()}`, started = performance.now();
+  let sequence = 0;
+  try {
+    await request('/api/v1/devices', { method: 'POST', body: JSON.stringify({ id: device, name: 'MEMO CO₂ 情境', location: 'scenario' }) }, base);
+    if (!scenarioRunning || apiBase !== base) { stopScenario(); return; }
+    activeDevice = device; generation++; await refresh();
+    async function step() {
+      if (!scenarioRunning || apiBase !== base || activeDevice !== device) { stopScenario(); return; }
+      const elapsed = (performance.now() - started) / 1000;
+      const co2 = elapsed < 20 ? 800 : elapsed < 60 ? Math.round(800 + (elapsed - 20) * 15) : elapsed < 210 ? 1400 : 800;
+      $('#scenario-status').textContent = `${elapsed < 20 ? '先觀察平穩環境' : elapsed < 60 ? '空間正在發生變化' : elapsed < 210 ? '持續觀察，等待 MEMO 主動提醒' : '環境回穩中，等待恢復確認'} · ${Math.floor(elapsed)} / 360 秒`;
+      try {
+        await request('/api/v1/telemetry', { method: 'POST', body: JSON.stringify({ schema_version: 1, message_id: crypto.randomUUID(), device_id: device, observed_at: new Date().toISOString(), sequence: ++sequence, quality: 'ok', metrics: { temperature_c: 26, humidity_pct: 60, co2_ppm: co2 } }) }, base);
+        await refresh();
+        if (elapsed >= 360) { stopScenario('劇本完成：資料已送出，恢復狀態以 MEMO 的實際回應為準。'); return; }
+        if (scenarioRunning) scenarioTimer = setTimeout(step, 5000);
+      } catch (error) { stopScenario(error.message); }
+    }
+    await step();
+  } catch (error) { stopScenario(error.message); }
+};
 if (apiBase) {
   try { apiBase = normalizeUrl(apiBase); refresh(); }
   catch (error) { apiBase = ''; toast(error.message); }
 }
 const interval = setInterval(() => { if (!document.hidden) refresh(); }, 5000);
-window.addEventListener('pagehide', () => { clearInterval(interval); companion?.dispose(); });
+window.addEventListener('pagehide', () => { clearTimeout(scenarioTimer); scenarioRunning = false; clearInterval(interval); companion?.dispose(); });

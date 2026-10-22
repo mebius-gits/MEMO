@@ -34,10 +34,18 @@ MEMO_CORS_ORIGINS=["http://localhost:5173","http://127.0.0.1:5173","https://memo
 
 網站每 5 秒讀取裝置與環境資料，過期資料會標示狀態。尚未設定網址時不會顯示假讀值。網址只儲存在目前瀏覽器。
 
-對話呼叫 `POST /api/v1/devices/{device_id}/interaction`，由後端查詢資料庫最新讀值，再輸出文字及情緒。現階段仍是模板回覆，不是外部 LLM。
+對話呼叫 `POST /api/v1/devices/{device_id}/interaction`，由後端查詢資料庫最新讀值，再輸出文字及情緒。後端設定模型後會實際呼叫；未設定或失敗時回傳明確標示的備援。
 
 「模擬環境」按鈕會建立獨立裝置 `memo-web-demo` 並寫入真實後端；載入網頁不會自動寫入資料。
 
 ## 瀏覽器驗證
 
 先啟動前端與 API，再執行 `npm run test:browser`。預設使用 Windows Chrome；其他環境設定 `CHROME_PATH`。可用 `MEMO_TEST_API` 指定測試 API（預設 localhost:8000）。測試會寫入 demo 裝置資料。
+
+## 主動回應與記憶
+
+網頁會為本瀏覽器保存 session_id，載入裝置的對話記憶；任務記憶獨立保存在後端。每 5 秒讀取通知，主動呈現 MEMO 的文字與情緒並確認收到。
+
+「開始 CO₂ 劇本」會建立獨立裝置，約六分鐘持續送資料，驗證上升、提醒與恢復。保持分頁開啟；停止或背景節流可能延後規則確認。一般對話不會逐筆報數據；想看數字可問「現在數值多少？」。
+
+後端規則、模型設定與 API 詳見 [執行說明](../docs/companion-runtime.md)。
