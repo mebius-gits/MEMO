@@ -28,7 +28,20 @@ API 容器會自動執行 Alembic migration，通過健康檢查後才啟動 Nod
 
 ## 設定與保存
 
-「MEMO MQTT 持續感測」分頁可按開始／停止控制每 5 秒的傳送。資料經 MQTT broker → environment-worker 寫入，再到原本的環境感測分頁查詢歷史。MQTT 主機使用 `MQTT_HOST=broker`，QoS 1、retain=false。詳見 [MQTT 說明](../docs/mqtt-worker.md)。
+「MEMO MQTT 持續感測」分頁可按開始／停止控制每 5 秒的傳送。資料經 MQTT broker → environment-worker 寫入，再到原本的環境感測分頁查詢歷史。
+
+傳送的數值會隨機漂移，並維持在告警門檻以下：溫度 23–27.5°C、濕度 45–68%、CO₂ 550–950 ppm。「建立 MQTT 感測封包」節點下方會顯示最新數值，有異常偏移時以紅點標示。
+
+同分頁下方可手動提高異常值：
+
+| 按鈕 | 偏移 | 會觸發的規則（持續一段時間後） |
+| --- | --- | --- |
+| CO₂ 提高 +700 ppm | `{"metric":"co2_ppm","delta":700}` | co2_rising、co2_high（> 1200 ppm） |
+| 溫度提高 +6°C | `{"metric":"temperature_c","delta":6}` | temperature_rising、temperature_high（> 30°C） |
+| 濕度提高 +20% | `{"metric":"humidity_pct","delta":20}` | humidity_high（> 75%） |
+| 恢復正常 | `{"reset":true}` | 清除全部偏移，等待恢復確認 |
+
+每按一次就再疊加一次偏移；偏移會在數筆資料內逐步升高或回落，不會瞬間跳動。雙擊按鈕可修改 `delta`，負數代表降低。異常值只在「開始持續傳送」後才會送出；目前設定會顯示在 Debug 的「異常值狀態」。MQTT 主機使用 `MQTT_HOST=broker`，QoS 1、retain=false。詳見 [MQTT 說明](../docs/mqtt-worker.md)。
 
 「MEMO 文字與情緒」分頁提供 LLM 契約測試。按「測試 MEMO 文字＋情緒」後會送出人格與模擬上下文，分別顯示文字、情緒強度與完整回應。目前來源為 template，不呼叫外部模型，也不將這筆模擬數據寫入資料庫。可在「設定人格與模擬上下文」節點更改 tone 為 gentle / lively / concise。詳細欄位見 [LLM 介面說明](../docs/llm-api.md)。
 

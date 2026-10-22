@@ -672,7 +672,7 @@
     "type": "tab",
     "label": "MEMO MQTT 持續感測",
     "disabled": false,
-    "info": "按開始後每 5 秒發布 QoS 1 感測資料，經 broker 與獨立 Worker 落庫。按停止結束。"
+    "info": "按開始後每 5 秒發布 QoS 1 感測資料（隨機漂移，維持在告警門檻以下），經 broker 與獨立 Worker 落庫。下方按鈕可手動疊加異常值，按「恢復正常」逐步回到正常範圍。"
   },
   {
     "id": "mqtt-start",
@@ -884,7 +884,7 @@
         "mqtt-publish"
       ]
     ],
-    "func": "const device = env.get('DEVICE_ID') || 'room01';\nconst sequence = (flow.get('memo_mqtt_sequence') || 0) + 1;\nflow.set('memo_mqtt_sequence', sequence);\nmsg.topic = 'memo/v1/' + device + '/telemetry';\nmsg.payload = {schema_version:1, message_id:device + '-' + Date.now() + '-' + msg._msgid,\n  device_id:device, observed_at:new Date().toISOString(), sequence:sequence,\n  metrics:{temperature_c:25.5, humidity_pct:60, co2_ppm:800}, quality:'ok'};\nreturn msg;",
+    "func": "const device = env.get('DEVICE_ID') || 'room01';\nconst sequence = (flow.get('memo_mqtt_sequence') || 0) + 1;\nflow.set('memo_mqtt_sequence', sequence);\n// Random walk inside a normal band below the backend alert thresholds: [min, max, max step, centre].\nconst NORMAL = {temperature_c: [23, 27.5, 0.12, 25], humidity_pct: [45, 68, 0.8, 58], co2_ppm: [550, 950, 20, 750]};\nconst LIMIT = {temperature_c: [-20, 50], humidity_pct: [0, 100], co2_ppm: [350, 5000]};\nconst clamp = (value, [low, high]) => Math.min(high, Math.max(low, value));\nconst base = flow.get('memo_mqtt_base') || {};\nconst target = flow.get('memo_mqtt_anomaly') || {};\nconst applied = flow.get('memo_mqtt_applied') || {};\nconst metrics = {};\nfor (const [key, [low, high, step, centre]] of Object.entries(NORMAL)) {\n  const previous = base[key] ?? centre;\n  base[key] = clamp(previous + (Math.random() * 2 - 1) * step + (centre - previous) * 0.02, [low, high]);\n  // Manual anomaly offsets ease in and out over a few samples instead of jumping.\n  const goal = target[key] || 0, current = applied[key] || 0;\n  applied[key] = Math.abs(goal - current) < step ? goal : current + (goal - current) * 0.35;\n  metrics[key] = Number(clamp(base[key] + applied[key], LIMIT[key]).toFixed(key === 'co2_ppm' ? 0 : 1));\n}\nflow.set('memo_mqtt_base', base);\nflow.set('memo_mqtt_applied', applied);\nconst abnormal = Object.values(applied).some(Boolean);\nnode.status({fill: abnormal ? 'red' : 'green', shape: 'dot', text: metrics.temperature_c + '°C ' + metrics.humidity_pct + '% ' + metrics.co2_ppm + 'ppm'});\nmsg.topic = 'memo/v1/' + device + '/telemetry';\nmsg.payload = {schema_version:1, message_id:device + '-' + Date.now() + '-' + msg._msgid,\n  device_id:device, observed_at:new Date().toISOString(), sequence:sequence, metrics, quality:'ok'};\nreturn msg;",
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,
@@ -954,6 +954,151 @@
     "tostatus": false,
     "complete": "true",
     "targetType": "full"
+  },
+  {
+    "id": "mqtt-anomaly-note",
+    "type": "comment",
+    "z": "memo-mqtt",
+    "name": "手動異常值：每按一次疊加一次偏移，數值在數筆內逐步升高；雙擊按鈕可改 delta",
+    "info": "",
+    "x": 420,
+    "y": 640,
+    "wires": []
+  },
+  {
+    "id": "mqtt-anomaly-co2",
+    "type": "inject",
+    "z": "memo-mqtt",
+    "name": "CO₂ 提高 +700 ppm",
+    "x": 190,
+    "y": 700,
+    "wires": [
+      [
+        "mqtt-anomaly"
+      ]
+    ],
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "payload": "{\"metric\": \"co2_ppm\", \"delta\": 700}",
+    "payloadType": "json",
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": ""
+  },
+  {
+    "id": "mqtt-anomaly-temp",
+    "type": "inject",
+    "z": "memo-mqtt",
+    "name": "溫度提高 +6°C",
+    "x": 190,
+    "y": 760,
+    "wires": [
+      [
+        "mqtt-anomaly"
+      ]
+    ],
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "payload": "{\"metric\": \"temperature_c\", \"delta\": 6}",
+    "payloadType": "json",
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": ""
+  },
+  {
+    "id": "mqtt-anomaly-humidity",
+    "type": "inject",
+    "z": "memo-mqtt",
+    "name": "濕度提高 +20%",
+    "x": 190,
+    "y": 820,
+    "wires": [
+      [
+        "mqtt-anomaly"
+      ]
+    ],
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "payload": "{\"metric\": \"humidity_pct\", \"delta\": 20}",
+    "payloadType": "json",
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": ""
+  },
+  {
+    "id": "mqtt-anomaly-reset",
+    "type": "inject",
+    "z": "memo-mqtt",
+    "name": "恢復正常",
+    "x": 190,
+    "y": 880,
+    "wires": [
+      [
+        "mqtt-anomaly"
+      ]
+    ],
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "payload": "{\"reset\": true}",
+    "payloadType": "json",
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": ""
+  },
+  {
+    "id": "mqtt-anomaly",
+    "type": "function",
+    "z": "memo-mqtt",
+    "name": "設定異常值",
+    "x": 470,
+    "y": 790,
+    "wires": [
+      [
+        "mqtt-anomaly-debug"
+      ]
+    ],
+    "func": "// payload {metric, delta} adds to that metric's anomaly offset; {reset: true} clears all offsets.\nconst input = msg.payload;\nif (!input || typeof input !== 'object') return null;\nconst target = input.reset ? {} : {...(flow.get('memo_mqtt_anomaly') || {})};\nif (!input.reset) {\n  if (!['temperature_c', 'humidity_pct', 'co2_ppm'].includes(input.metric) || !Number.isFinite(input.delta)) {\n    node.warn('payload 需為 {\"metric\": \"co2_ppm\", \"delta\": 700} 或 {\"reset\": true}');\n    return null;\n  }\n  target[input.metric] = (target[input.metric] || 0) + input.delta;\n}\nflow.set('memo_mqtt_anomaly', target);\nconst labels = {temperature_c: '溫度', humidity_pct: '濕度', co2_ppm: 'CO₂'};\nconst text = Object.entries(target).filter(([, value]) => value).map(([key, value]) => labels[key] + (value > 0 ? ' +' : ' ') + value).join('、') || '正常';\nnode.status({fill: text === '正常' ? 'green' : 'red', shape: 'dot', text});\nmsg.payload = {anomaly_offset: target, sending: flow.get('memo_mqtt_enabled') === true};\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": []
+  },
+  {
+    "id": "mqtt-anomaly-debug",
+    "type": "debug",
+    "z": "memo-mqtt",
+    "name": "異常值狀態",
+    "x": 720,
+    "y": 790,
+    "wires": [],
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg"
   },
   {
     "id": "memo-broker",

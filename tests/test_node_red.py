@@ -35,16 +35,34 @@ const env = {get: key => ({API_URL:'http://api:8000', DEVICE_ID:'room01'})[key]}
 const requests = {};
 const values = {};
 const flow = {get: key => values[key], set: (key, value) => { values[key] = value; }};
+const node = {status() {}, warn() {}};
+const fns = {};
 for (const n of nodes.filter(n => n.type === 'function')) {
-    const fn = new Function('msg', 'env', 'flow', n.func);
-    requests[n.id] = fn({_msgid:'test-message'}, env, flow);
+    fns[n.id] = new Function('msg', 'env', 'flow', 'node', n.func);
+    requests[n.id] = fns[n.id]({_msgid:'test-message'}, env, flow, node);
 }
-console.log(JSON.stringify(requests));
+const byId = Object.fromEntries(nodes.map(n => [n.id, n]));
+const sample = i => fns['mqtt-build']({_msgid:'drift-' + i}, env, flow, node).payload;
+const normal = Array.from({length: 500}, (_, i) => sample(i).metrics);
+fns['mqtt-anomaly']({payload: JSON.parse(byId['mqtt-anomaly-co2'].payload)}, env, flow, node);
+let raised; for (let i = 0; i < 20; i++) raised = sample('raised-' + i);
+fns['mqtt-anomaly']({payload: JSON.parse(byId['mqtt-anomaly-reset'].payload)}, env, flow, node);
+let recovered; for (let i = 0; i < 20; i++) recovered = sample('recovered-' + i);
+console.log(JSON.stringify({requests, normal, raised, recovered}));
 """
     result = subprocess.run(
         [node_executable, "-e", script], check=True, capture_output=True, encoding="utf-8"
     )
-    requests = json.loads(result.stdout)
+    output = json.loads(result.stdout)
+    requests = output["requests"]
+    normal = output["normal"]
+    # Drift varies but stays inside the normal band, below every alert threshold.
+    for key, low, high in [("temperature_c", 23, 27.5), ("humidity_pct", 45, 68), ("co2_ppm", 550, 950)]:
+        values = [metrics[key] for metrics in normal]
+        assert low <= min(values) and max(values) <= high
+        assert len(set(values)) > 10
+    assert output["raised"]["metrics"]["co2_ppm"] > 1200
+    assert output["recovered"]["metrics"]["co2_ppm"] <= 950
     url = f"sqlite:///{(tmp_path / 'flow.db').as_posix()}"
     monkeypatch.setenv("DATABASE_URL", url)
     command.upgrade(Config("alembic.ini"), "head")
@@ -64,6 +82,8 @@ console.log(JSON.stringify(requests));
             )
             assert response.status_code == status, response.text
         assert response.json()[0]["temperature_c"] == 29.2
+        response = client.post("/api/v1/telemetry", json=output["raised"])
+        assert response.status_code == 200, response.text
         request = requests["llm-build"]
         response = client.request(
             request["method"],
