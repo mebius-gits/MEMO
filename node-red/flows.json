@@ -801,7 +801,7 @@
         "mqtt-register-http"
       ]
     ],
-    "func": "const base = (env.get('API_URL') || 'http://api:8000').replace(/\\/$/, '');\nconst device = env.get('DEVICE_ID') || 'room01';\nmsg.method = 'POST';\nmsg.url = base + '/api/v1/devices';\nmsg.headers = {'Content-Type':'application/json'};\nmsg.payload = {id: device, name: 'MEMO 模擬裝置', location:'示範空間'};\nreturn msg;",
+    "func": "const base = (env.get('API_URL') || 'http://api:8000').replace(/\\/$/, '');\nconst device = env.get('DEVICE_ID') || 'room01';\nmsg.method = 'POST';\nmsg.url = base + '/api/v1/devices';\n// Fresh connection each tick: reusing a keep-alive socket races the API's 5 s idle timeout.\nmsg.headers = {'Content-Type':'application/json', 'Connection':'close'};\nmsg.payload = {id: device, name: 'MEMO 模擬裝置', location:'示範空間'};\nreturn msg;",
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,
