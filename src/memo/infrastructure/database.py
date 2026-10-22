@@ -78,6 +78,37 @@ class TaskMemoryRow(Base):
     response: Mapped[dict | None] = mapped_column(JSON)
 
 
+class ScheduledJobRow(Base):
+    """A reminder, recurring task or follow-up; due runs become task_memory notices."""
+
+    __tablename__ = "scheduled_jobs"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    device_id: Mapped[str] = mapped_column(ForeignKey("devices.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(16))  # once | interval | daily | followup
+    purpose: Mapped[str] = mapped_column(String(16))  # remind | summary | followup
+    message: Mapped[str] = mapped_column(String(120))
+    minutes: Mapped[int | None] = mapped_column(Integer)
+    time_of_day: Mapped[str | None] = mapped_column(String(5))
+    baseline: Mapped[dict | None] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(
+        String(16), index=True
+    )  # active | paused | done | cancelled
+    next_run_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), index=True)
+    runs: Mapped[int] = mapped_column(Integer, default=0)
+    session_id: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime())
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime())
+
+
+class DeviceSettingRow(Base):
+    """Per-device preferences; the last persona used in chat also voices proactive notices."""
+
+    __tablename__ = "device_settings"
+    device_id: Mapped[str] = mapped_column(ForeignKey("devices.id"), primary_key=True)
+    personality: Mapped[dict] = mapped_column(JSON)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime())
+
+
 class ConversationRow(Base):
     __tablename__ = "conversation_memory"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api/v1/devices", tags=["MEMO memory and events"])
 
 def get_memory(request: Request):
     with request.app.state.session_factory() as session:
-        yield SqlMemoryRepository(session)
+        yield SqlMemoryRepository(session, request.app.state.timezone)
 
 
 Memory = Annotated[SqlMemoryRepository, Depends(get_memory)]

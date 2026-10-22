@@ -1,23 +1,39 @@
+from dataclasses import asdict
 from datetime import datetime, timezone
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 
 from memo.domain.entities import Conflict, NotFound
-from memo.domain.interaction import EventContext, Observation
+from memo.domain.environment import LEVELS, SUBJECTS
+from memo.domain.interaction import EventContext, Observation, Personality, Tone
 from memo.infrastructure.database import (
     ConversationRow,
     DeviceRow,
+    DeviceSettingRow,
     EventStateRow,
     ReadingRow,
+    ScheduledJobRow,
     TaskMemoryRow,
 )
-from memo.infrastructure.environment_events import current_task
+from memo.infrastructure.environment_events import (
+    SCHEDULE_RULE,
+    attention_context,
+    current_task,
+)
+from memo.infrastructure.schedules import ScheduleRepository, job_description
+
+
+def severity(row) -> int:
+    level = row.state.get("level")
+    return LEVELS.index(level) if level in LEVELS else -1
 
 
 class SqlMemoryRepository:
-    def __init__(self, session):
+    def __init__(self, session, tz: str = "Asia/Taipei"):
         self.session = session
+        self.tz = tz
+        self.schedules = ScheduleRepository(session, tz)
 
     def require_device(self, device_id):
         if self.session.get(DeviceRow, device_id) is None:
@@ -78,15 +94,14 @@ class SqlMemoryRepository:
             .order_by(EventStateRow.rule_id)
         ).all()
         now = datetime.now(timezone.utc).timestamp()
-        active = next(
-            (
-                r
-                for r in states
-                if r.state.get("status") in ("active", "recovering")
-                and 0 <= now - r.state.get("last", 0) <= 30
-            ),
-            None,
-        )
+        live = [
+            r
+            for r in states
+            if r.state.get("status") in ("active", "recovering")
+            and 0 <= now - r.state.get("last", 0) <= 30
+        ]
+        # The most severe live situation leads the conversation.
+        active = max(live, key=severity) if live else None
         event = (
             EventContext(
                 active.state["event_id"],
@@ -113,9 +128,70 @@ class SqlMemoryRepository:
             }
             for t in self.tasks(device_id, 10)
         )
+        attention = attention_context(active.rule_id, active.state) if active else None
+        jobs = tuple(job_description(job, self.tz) for job in self.schedules.open_jobs(device_id))
         # End the read transaction before a potentially slow model request.
         self.session.rollback()
-        return dict(observation=observation, event=event, history=tuple(history), task_memory=tasks)
+        return dict(
+            observation=observation,
+            event=event,
+            history=tuple(history),
+            task_memory=tasks,
+            attention=attention,
+            jobs=jobs,
+        )
+
+    def personality(self, device_id) -> Personality:
+        row = self.session.get(DeviceSettingRow, device_id)
+        if row is None:
+            return Personality()
+        saved = dict(row.personality)
+        saved["tone"] = Tone(saved.get("tone", Tone.GENTLE.value))
+        return Personality(**saved)
+
+    def save_personality(self, device_id, personality: Personality):
+        """Remember the persona last used in chat; proactive notices speak with it."""
+        self.require_device(device_id)
+        value = asdict(personality) | {"tone": personality.tone.value}
+        row = self.session.get(DeviceSettingRow, device_id)
+        now = datetime.now(timezone.utc)
+        if row is None:
+            self.session.add(
+                DeviceSettingRow(device_id=device_id, personality=value, updated_at=now)
+            )
+        elif row.personality != value:
+            row.personality, row.updated_at = value, now
+        self.session.commit()
+
+    def apply_action(self, device_id, action, session_id=None) -> str | None:
+        return self.schedules.apply(device_id, action, datetime.now(timezone.utc), session_id)
+
+    def missed(self, device_id, since) -> tuple[dict, ...]:
+        """Notices created since ``since`` that can no longer reach the user.
+
+        Still-deliverable notices are excluded: the page announces those itself."""
+        self.require_device(device_id)
+        rows = self.session.scalars(
+            select(TaskMemoryRow)
+            .where(
+                TaskMemoryRow.device_id == device_id,
+                TaskMemoryRow.created_at >= since,
+                TaskMemoryRow.status.in_(["expired", "cancelled"]),
+            )
+            .order_by(TaskMemoryRow.created_at)
+            .limit(30)
+        ).all()
+        missed = []
+        for task in rows:
+            item = {"at": task.created_at.isoformat(), "notice": task.event_status}
+            if task.rule_id == SCHEDULE_RULE:
+                job = self.session.get(ScheduledJobRow, task.event_id)
+                item["what"] = job.message if job else "排程提醒"
+            else:
+                item["what"] = SUBJECTS.get(task.rule_id, task.rule_id)
+            missed.append(item)
+        self.session.rollback()
+        return tuple(missed)
 
     def recall(self, device_id, session_id, request_id, text):
         row = self.session.scalar(

@@ -52,6 +52,16 @@ class InteractionInput:
     context_source: str = "caller_supplied"
     task_memory: tuple[dict, ...] = ()
     proactive: bool = False
+    # Rule-engine view of the current situation: severity, how long, reminders so far.
+    attention: dict | None = None
+    # The scheduled job being delivered (remind / summary / follow-up with before & after).
+    schedule: dict | None = None
+    # Active scheduled jobs, described in Chinese, so MEMO can answer "what reminders do I have".
+    jobs: tuple[str, ...] = ()
+    # Actions the backend just carried out for this message (created, snoozed, cancelled...).
+    actions_done: tuple[str, ...] = ()
+    # Notices the user did not see while away, for the welcome-back digest.
+    missed: tuple[dict, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -70,3 +80,5 @@ class Reply:
     intensity: float
     source: str = "template"
     fallback_reason: str | None = "model_not_configured"
+    # An optional action the model proposes; the backend validates it before doing anything.
+    action: dict | None = None

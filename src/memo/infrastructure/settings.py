@@ -3,6 +3,8 @@ from typing import Literal
 from pydantic import AnyHttpUrl, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from memo.domain.attention import AttentionPolicy
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="", env_file=".env", extra="ignore")
@@ -24,6 +26,22 @@ class Settings(BaseSettings):
     # a proxy that injects its own) or answer "{}" in JSON mode; the prompt still asks for JSON.
     openai_system_role: bool = True
     openai_json_mode: bool = True
+
+
+class AttentionSettings(BaseSettings):
+    """How often MEMO may speak on its own; read by both the API and the MQTT worker."""
+
+    model_config = SettingsConfigDict(env_prefix="", env_file=".env", extra="ignore")
+
+    timezone: str = "Asia/Taipei"
+    # Local "HH:MM-HH:MM" (may cross midnight); only danger-level notices speak inside it.
+    quiet_hours: str = Field(default="", pattern=r"^$|^\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}$")
+    max_proactive_per_hour: int = Field(default=6, ge=1, le=60)
+
+    def policy(self) -> AttentionPolicy:
+        return AttentionPolicy.from_settings(
+            self.quiet_hours, self.max_proactive_per_hour, self.timezone
+        )
 
 
 class MqttSettings(BaseSettings):

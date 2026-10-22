@@ -52,7 +52,13 @@ class InteractionService:
             "只引用 usable_metrics 與已提供的事件依據，不編造數值、原因或恢復狀態。"
             "缺少有效資料時明確說明；不把缺值當零。"
             "建議只能來自 approved_suggestions，不新增具體通風或健康建議。"
-            "不執行確認、延後、已處理等操作，不宣稱已完成任何動作。"
+            "actions_done 是後端剛為這則訊息完成的動作（設定提醒、延後、取消等），"
+            "要自然地確認；沒列在 actions_done 的動作絕不宣稱已完成。"
+            "jobs 是目前有效的排程，可用來回答使用者有哪些提醒。"
+            "attention 是規則引擎對目前狀況的判斷：level_label 為注意、警戒或危險，"
+            "minutes_active 為已持續分鐘，reminders 為已提醒次數。語氣隨嚴重程度調整："
+            "注意輕聲提醒、警戒明確提醒、危險直接而緊迫；重複提醒要換說法。"
+            "schedule 是到期的排程任務；missed 是使用者離開期間沒收到的提醒。"
             "僅輸出符合 output_schema 的 JSON：text 與 emotion。"
             "emotion 是 MEMO 顯示表情，不是使用者情緒診斷，也不是警報嚴重程度。"
         )
@@ -61,7 +67,8 @@ class InteractionService:
             "一次一到兩句、合計約 15 到 50 個字，用口語短句，不寫文章、不條列、"
             "不用表情符號、括號或 Markdown。"
             "不要每次開頭自我介紹，不要逐項朗讀溫濕度或 CO₂ 數字。"
-            "只有使用者明確詢問數據、數值、幾度或多少時，才引用有效數字。"
+            "只有使用者詢問數值，或 user_message 要求（摘要、追蹤回報、升級提醒）時，"
+            "才引用有效數字，而且只講最關鍵的。"
             "引用數字時用自然中文與單位（例如「溫度 25 度」「CO₂ 839 ppm」），"
             "絕不輸出欄位名稱或程式格式，"
             "例如 temperature_c、humidity_pct、co2_ppm 或「key: value」。"
@@ -71,6 +78,16 @@ class InteractionService:
         )
         if request.context_source == "stored_readings":
             system += "本次 event 若有提供，已由後端規則引擎核對；以其狀態為準。"
+        if not request.proactive:
+            system += (
+                "若使用者要求設定提醒、定期提醒、追蹤回報、延後或取消，而 actions_done 是空的，"
+                "就在 JSON 加上 action 欄位，格式擇一："
+                '{"type":"schedule","kind":"once|interval|daily|followup",'
+                '"purpose":"remind|summary","message":"要提醒的事","minutes":10,"time":"09:00"}、'
+                '{"type":"snooze","minutes":30}、{"type":"cancel|pause|resume","match":"關鍵字"}。'
+                "once 與 followup 用 minutes 表示幾分鐘後，interval 用 minutes 表示間隔，"
+                "daily 用 time（24 小時制）。不確定使用者的意思就先問，不要猜。"
+            )
         event = request.event
         user = json.dumps(
             {
@@ -93,6 +110,11 @@ class InteractionService:
                 if event
                 else None,
                 "approved_suggestions": list(request.approved_suggestions),
+                "attention": request.attention,
+                "schedule": request.schedule,
+                "jobs": list(request.jobs),
+                "actions_done": list(request.actions_done),
+                "missed": list(request.missed),
                 "warnings": warnings,
             },
             ensure_ascii=False,

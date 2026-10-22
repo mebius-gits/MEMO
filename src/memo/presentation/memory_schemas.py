@@ -15,7 +15,11 @@ class TaskOutput(Schema):
     event_id: str
     event_version: int
     rule_id: str
-    event_status: Literal["active", "resolved"]
+    # Environment notices: active / escalated / reminder / resolved.
+    # Scheduled jobs (rule_id "schedule"): remind / summary / followup.
+    event_status: Literal[
+        "active", "escalated", "reminder", "resolved", "remind", "summary", "followup"
+    ]
     status: Literal["queued", "generating", "ready", "acknowledged", "cancelled", "expired"]
     created_at: datetime
     expires_at: datetime
@@ -38,6 +42,12 @@ class EventOutput(Schema):
     score: float | None = None
     event_id: str | None = None
     version: int = 0
+    level: Literal["caution", "warning", "danger"] | None = None
+    active_since: float | None = None
+    notified_at: float | None = None
+    notified_level: Literal["caution", "warning", "danger"] | None = None
+    reminders: int = 0
+    snoozed_until: float = 0
 
 
 class Acknowledged(Schema):

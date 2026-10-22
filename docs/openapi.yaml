@@ -487,6 +487,166 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/schedules:
+    get:
+      tags:
+      - MEMO schedules
+      summary: List Schedules
+      operationId: list_schedules_api_v1_devices__device_id__schedules_get
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/JobOutput'
+                title: Response List Schedules Api V1 Devices  Device Id  Schedules
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - MEMO schedules
+      summary: Create Schedule
+      operationId: create_schedule_api_v1_devices__device_id__schedules_post
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduleCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobOutput'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/schedules/{job_id}:
+    patch:
+      tags:
+      - MEMO schedules
+      summary: Update Schedule
+      operationId: update_schedule_api_v1_devices__device_id__schedules__job_id__patch
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduleUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobOutput'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - MEMO schedules
+      summary: Delete Schedule
+      operationId: delete_schedule_api_v1_devices__device_id__schedules__job_id__delete
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/digest:
+    post:
+      tags:
+      - MEMO schedules
+      summary: Digest
+      description: One or two sentences on what the user missed since ``since``; text
+        is null if nothing.
+      operationId: digest_api_v1_devices__device_id__digest_post
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DigestRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DigestOutput'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /health/live:
     get:
       tags:
@@ -607,6 +767,46 @@ components:
       - id
       - name
       title: DeviceSchema
+    DigestOutput:
+      properties:
+        text:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Text
+        emotion:
+          anyOf:
+          - $ref: '#/components/schemas/EmotionOutput'
+          - type: 'null'
+        missed:
+          type: integer
+          title: Missed
+        source:
+          anyOf:
+          - type: string
+            enum:
+            - template
+            - model
+          - type: 'null'
+          title: Source
+      additionalProperties: false
+      type: object
+      required:
+      - text
+      - missed
+      title: DigestOutput
+    DigestRequest:
+      properties:
+        since:
+          type: string
+          format: date-time
+          title: Since
+          description: 使用者上次在場的時間
+      additionalProperties: false
+      type: object
+      required:
+      - since
+      title: DigestRequest
     EmotionLabel:
       type: string
       enum:
@@ -707,6 +907,42 @@ components:
         version:
           type: integer
           title: Version
+          default: 0
+        level:
+          anyOf:
+          - type: string
+            enum:
+            - caution
+            - warning
+            - danger
+          - type: 'null'
+          title: Level
+        active_since:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Active Since
+        notified_at:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Notified At
+        notified_level:
+          anyOf:
+          - type: string
+            enum:
+            - caution
+            - warning
+            - danger
+          - type: 'null'
+          title: Notified Level
+        reminders:
+          type: integer
+          title: Reminders
+          default: 0
+        snoozed_until:
+          type: number
+          title: Snoozed Until
           default: 0
       additionalProperties: false
       type: object
@@ -867,6 +1103,12 @@ components:
             - stale_observation
           type: array
           title: Warnings
+        actions:
+          items:
+            type: string
+          type: array
+          title: Actions
+          description: 後端為這則訊息完成的動作（設定提醒、延後、取消等），以中文描述。
       additionalProperties: false
       type: object
       required:
@@ -875,6 +1117,78 @@ components:
       - request_id
       - warnings
       title: InteractionResponse
+    JobOutput:
+      properties:
+        id:
+          type: string
+          title: Id
+        kind:
+          type: string
+          enum:
+          - once
+          - interval
+          - daily
+          - followup
+          title: Kind
+        purpose:
+          type: string
+          enum:
+          - remind
+          - summary
+          - followup
+          title: Purpose
+        message:
+          type: string
+          title: Message
+        minutes:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Minutes
+        time_of_day:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Time Of Day
+        status:
+          type: string
+          enum:
+          - active
+          - paused
+          - done
+          - cancelled
+          title: Status
+        next_run_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Next Run At
+        runs:
+          type: integer
+          title: Runs
+        description:
+          type: string
+          title: Description
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      - kind
+      - purpose
+      - message
+      - minutes
+      - time_of_day
+      - status
+      - next_run_at
+      - runs
+      - description
+      - created_at
+      title: JobOutput
     Metrics:
       properties:
         temperature_c:
@@ -1062,6 +1376,63 @@ components:
       - co2_ppm
       - quality
       title: ReadingOutput
+    ScheduleCreate:
+      properties:
+        kind:
+          type: string
+          enum:
+          - once
+          - interval
+          - daily
+          - followup
+          title: Kind
+        purpose:
+          type: string
+          enum:
+          - remind
+          - summary
+          title: Purpose
+          default: remind
+        message:
+          type: string
+          maxLength: 60
+          title: Message
+          default: ''
+          examples:
+          - 喝水
+        minutes:
+          anyOf:
+          - type: integer
+            maximum: 1440.0
+            minimum: 1.0
+          - type: 'null'
+          title: Minutes
+          description: once／followup：幾分鐘後；interval：間隔
+        time:
+          anyOf:
+          - type: string
+            pattern: ^([01]?\d|2[0-3]):[0-5]\d$
+          - type: 'null'
+          title: Time
+          description: daily：台北時間 HH:MM
+      additionalProperties: false
+      type: object
+      required:
+      - kind
+      title: ScheduleCreate
+    ScheduleUpdate:
+      properties:
+        status:
+          type: string
+          enum:
+          - active
+          - paused
+          title: Status
+      additionalProperties: false
+      type: object
+      required:
+      - status
+      title: ScheduleUpdate
     TaskOutput:
       properties:
         id:
@@ -1080,7 +1451,12 @@ components:
           type: string
           enum:
           - active
+          - escalated
+          - reminder
           - resolved
+          - remind
+          - summary
+          - followup
           title: Event Status
         status:
           type: string

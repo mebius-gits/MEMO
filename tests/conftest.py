@@ -6,3 +6,5 @@ import os
 # Tests that exercise the model pass openai_* settings explicitly.
 os.environ["OPENAI_MODEL"] = ""
 os.environ["OPENAI_API_KEY"] = ""
+# Quiet hours from a local .env would make proactive tests depend on the time of day.
+os.environ["QUIET_HOURS"] = ""

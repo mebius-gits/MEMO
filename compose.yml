@@ -1,5 +1,12 @@
 name: memo
 
+# When MEMO may speak on its own. Shared by the API (chat, scheduler) and the MQTT worker
+# (which runs the rules), so both judge alike. Values come from .env or these defaults.
+x-attention: &attention
+  TIMEZONE: ${TIMEZONE:-Asia/Taipei}
+  QUIET_HOURS: ${QUIET_HOURS:-}
+  MAX_PROACTIVE_PER_HOUR: ${MAX_PROACTIVE_PER_HOUR:-6}
+
 services:
   api:
     build: .
@@ -8,6 +15,7 @@ services:
       - path: .env
         required: false
     environment:
+      <<: *attention
       APP_NAME: MEMO
       CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:5173","http://127.0.0.1:5173","https://memo-quiet-room.fancyhen36.chatgpt.site"]}
       DATABASE_URL: sqlite:////data/memo.db
@@ -61,6 +69,7 @@ services:
     restart: unless-stopped
     command: ["python", "-m", "memo.workers.environment"]
     environment:
+      <<: *attention
       DATABASE_URL: sqlite:////data/memo.db
       MQTT_HOST: broker
       MQTT_CLIENT_ID: memo-environment-worker

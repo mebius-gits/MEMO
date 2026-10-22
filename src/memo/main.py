@@ -16,15 +16,18 @@ from memo.infrastructure.database import build_engine
 from memo.infrastructure.model_reply import ModelReplyGenerator
 from memo.infrastructure.notifications import run_dispatcher
 from memo.infrastructure.repository import SqlAlchemyRepository
-from memo.infrastructure.settings import Settings
+from memo.infrastructure.schedules import run_scheduler
+from memo.infrastructure.settings import AttentionSettings, Settings
 from memo.presentation.interaction_routes import device_router
 from memo.presentation.interaction_routes import router as interaction_router
 from memo.presentation.memory_routes import router as memory_router
 from memo.presentation.routes import router
+from memo.presentation.schedule_routes import router as schedule_router
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
+    timezone = AttentionSettings().timezone
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -34,38 +37,50 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             SqlAlchemyRepository(session)
         )
         stop = threading.Event()
-        dispatcher = threading.Thread(
-            target=run_dispatcher,
-            args=(
-                stop,
-                app.state.session_factory,
-                app.state.interaction_service,
-                settings.openai_timeout_seconds,
+        # The dispatcher turns queued notices into replies; the scheduler turns due jobs
+        # into queued notices. Both are durable, so a restart resumes where they left off.
+        workers = [
+            threading.Thread(
+                target=run_dispatcher,
+                args=(
+                    stop,
+                    app.state.session_factory,
+                    app.state.interaction_service,
+                    settings.openai_timeout_seconds,
+                    timezone,
+                ),
+                daemon=True,
             ),
-            daemon=True,
-        )
+            threading.Thread(
+                target=run_scheduler, args=(stop, app.state.session_factory, timezone), daemon=True
+            ),
+        ]
         if settings.notifications_enabled:
-            dispatcher.start()
+            for worker in workers:
+                worker.start()
         try:
             yield
         finally:
             stop.set()
-            if dispatcher.is_alive():
-                await asyncio.to_thread(dispatcher.join, settings.openai_timeout_seconds + 5)
+            for worker in workers:
+                if worker.is_alive():
+                    await asyncio.to_thread(worker.join, settings.openai_timeout_seconds + 5)
             engine.dispose()
 
     app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
-        allow_methods=["GET", "POST", "DELETE"],
+        allow_methods=["GET", "POST", "PATCH", "DELETE"],
         allow_headers=["Content-Type"],
     )
     app.include_router(router)
     app.include_router(interaction_router)
     app.include_router(device_router)
     app.include_router(memory_router)
+    app.include_router(schedule_router)
     app.state.interaction_service = InteractionService(ModelReplyGenerator(settings))
+    app.state.timezone = timezone
 
     @app.exception_handler(NotFound)
     async def not_found(_: Request, exc: NotFound):
@@ -87,6 +102,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 session.execute(text("SELECT message_id FROM readings LIMIT 1"))
                 session.execute(text("SELECT id FROM task_memory LIMIT 1"))
                 session.execute(text("SELECT id FROM conversation_memory LIMIT 1"))
+                session.execute(text("SELECT id FROM scheduled_jobs LIMIT 1"))
         except SQLAlchemyError:
             return JSONResponse(status_code=503, content={"status": "unavailable"})
         return {"status": "ready"}

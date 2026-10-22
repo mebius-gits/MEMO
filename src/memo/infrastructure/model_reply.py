@@ -38,6 +38,16 @@ def parse_content(content):
     return text.strip(), label, intensity
 
 
+def extract_action(content):
+    """The model's optional "action" object, unvalidated; None when absent or unreadable."""
+    try:
+        start, end = content.find("{"), content.rfind("}")
+        action = json.loads(content[start : end + 1]).get("action")
+    except (ValueError, AttributeError):
+        return None
+    return action if isinstance(action, dict) else None
+
+
 SPOKEN_LIMIT = 80
 
 
@@ -70,7 +80,8 @@ class ModelReplyGenerator:
         instructions = (
             prepared.system_prompt + '\nJSON contract: {"text":"繁體中文，1至2000字",'
             '"emotion":{"label":"neutral|friendly|concerned|happy|confused",'
-            '"intensity":0.4}}. No other fields.'
+            '"intensity":0.4}}, plus the optional "action" object when allowed above. '
+            "No other fields."
         )
         if settings.openai_system_role:
             messages = [
@@ -113,7 +124,8 @@ class ModelReplyGenerator:
                     if prepared.input.event.status == "resolved"
                     else EmotionLabel.CONCERNED
                 )
-            return Reply(conversational(text), emotion, intensity, "model", None)
+            action = None if prepared.input.proactive else extract_action(content)
+            return Reply(conversational(text), emotion, intensity, "model", None, action)
         except (TimeoutError, socket.timeout):
             reason = "model_timeout"
         except (HTTPError, URLError, OSError):

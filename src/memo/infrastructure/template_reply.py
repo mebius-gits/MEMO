@@ -5,13 +5,36 @@ LABELS = {
     "temperature_c": ("溫度", "°C"),
     "humidity_pct": ("濕度", "%"),
     "co2_ppm": ("CO₂", " ppm"),
+    "feels_like_c": ("體感溫度", "°C"),
 }
 
 
 def spoken(metrics):
     return "、".join(
-        f"{LABELS[key][0]} {value:g}{LABELS[key][1]}" for key, value in metrics.items()
+        f"{LABELS[key][0]} {value:g}{LABELS[key][1]}"
+        for key, value in metrics.items()
+        if key in LABELS
     )
+
+
+def followup_words(schedule) -> str:
+    """Before/after report for a follow-up, e.g. 你開窗之後，CO₂ 從 1400 降到 900 ppm。"""
+    before, after = schedule.get("baseline") or {}, schedule.get("current") or {}
+    parts = []
+    for key in ("co2_ppm", "feels_like_c", "humidity_pct"):
+        if key in before and key in after:
+            name, unit = LABELS[key]
+            old, new = before[key], after[key]
+            trend = "降到" if new < old else "升到" if new > old else "維持在"
+            parts.append(
+                f"{name}{trend} {new:g}{unit}"
+                if trend == "維持在"
+                else f"{name}從 {old:g} {trend} {new:g}{unit}"
+            )
+    action = schedule["message"].removeprefix("我")
+    if not parts:
+        return f"你{action}之後，我還沒有足夠的前後資料，沒辦法判斷有沒有改善。"
+    return f"你{action}之後，" + "、".join(parts) + "。"
 
 
 class TemplateReplyGenerator:
@@ -21,10 +44,39 @@ class TemplateReplyGenerator:
         tone = prepared.input.personality.tone
         request = prepared.input
         if request.context_source == "stored_readings":
+            if request.actions_done and not request.proactive:
+                return Reply(
+                    "好，" + "；".join(request.actions_done) + "。", EmotionLabel.HAPPY, 0.5
+                )
+            if request.schedule:
+                schedule = request.schedule
+                if schedule["purpose"] == "followup":
+                    return Reply(followup_words(schedule), EmotionLabel.FRIENDLY, 0.5)
+                if schedule["purpose"] == "summary":
+                    text = (
+                        "現在環境：" + spoken(prepared.usable_metrics) + "。"
+                        if prepared.usable_metrics
+                        else "現在沒有可用的環境資料，等收到新消息我再跟你說。"
+                    )
+                    return Reply(text, EmotionLabel.FRIENDLY, 0.4)
+                return Reply(f"提醒你：{schedule['message']}。", EmotionLabel.FRIENDLY, 0.5)
+            if request.missed:
+                text = f"你不在的時候，有 {len(request.missed)} 則提醒沒說到。"
+                if request.attention and request.attention.get("level"):
+                    text += "現在的狀況還在持續，我會繼續留意。"
+                return Reply(text, EmotionLabel.CONCERNED, 0.4)
             event = request.event
             if event:
                 rule_id = event.rule_evidence.split(":", 1)[0]
-                text = event_words(rule_id, event.status, tone.value)
+                attention = request.attention or {}
+                text = event_words(
+                    rule_id,
+                    event.status,
+                    tone.value,
+                    kind=attention.get("notice"),
+                    level=attention.get("level"),
+                    minutes=attention.get("minutes_active"),
+                )
                 emotion = (
                     EmotionLabel.HAPPY if event.status == "resolved" else EmotionLabel.CONCERNED
                 )

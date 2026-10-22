@@ -98,6 +98,10 @@ class InteractionResponse(ModelReply):
             "stale_observation",
         ]
     ]
+    actions: list[str] = Field(
+        default_factory=list,
+        description="後端為這則訊息完成的動作（設定提醒、延後、取消等），以中文描述。",
+    )
 
 
 class PreparedResponse(Schema):
