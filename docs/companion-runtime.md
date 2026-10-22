@@ -5,16 +5,16 @@
 更新前先停止舊 API／Worker，執行 `uv run alembic upgrade head`，再啟動服務。新增 migration `0002` 保存環境狀態、任務記憶、對話記憶；原本讀值不會刪除。Docker API 的啟動指令會執行 migration。
 
 ```dotenv
-LLM_BASE_URL=http://localhost:11434/v1
-LLM_MODEL=你的模型名稱
-LLM_API_KEY=
-LLM_TIMEOUT_SECONDS=30
+OPENAI_API_KEY=
+OPENAI_BASE_URL=http://localhost:11434/v1
+OPENAI_MODEL=你的模型名稱
+OPENAI_TIMEOUT_SECONDS=30
 NOTIFICATIONS_ENABLED=true
 ```
 
-模型必須支援 Chat Completions 相容介面：後端 POST `{base_url}/chat/completions`，使用 `messages`、`response_format: {type: json_object}`、`stream: false`。參考 [Ollama 官方相容介面](https://github.com/ollama/ollama/blob/main/docs/api/openai-compatibility.mdx)。本機 Ollama 可不填 key；其他服務依其要求設定。Docker 的 localhost 是容器本身，請填容器可連到的模型網址。
+變數名稱沿用 OpenAI SDK 慣例。`OPENAI_BASE_URL` 未設定時預設為 `https://api.openai.com/v1`。模型必須支援 Chat Completions 相容介面：後端 POST `{OPENAI_BASE_URL}/chat/completions`，使用 `messages`、`response_format: {type: json_object}`、`stream: false`。參考 [Ollama 官方相容介面](https://github.com/ollama/ollama/blob/main/docs/api/openai-compatibility.mdx)。本機 Ollama 可不填 key；其他服務依其要求設定。Docker 的 localhost 是容器本身，請填容器可連到的模型網址。
 
-URL 或模型名稱未設定就使用模板；網路錯誤、逾時、無效 JSON 或不合法情緒也會改用備援。每個回覆都有 `source` 和 `fallback_reason`，不會把模板偽裝成模型回覆。輸出 JSON 驗證不代表模型內容必然正確；事件判斷由規則引擎負責。API key 只保存在後端設定。
+`OPENAI_MODEL` 未設定就使用模板；網路錯誤、逾時、無效 JSON 或不合法情緒也會改用備援。每個回覆都有 `source` 和 `fallback_reason`，不會把模板偽裝成模型回覆。輸出 JSON 驗證不代表模型內容必然正確；事件判斷由規則引擎負責。API key 只保存在後端設定。
 
 ## 記憶分離
 

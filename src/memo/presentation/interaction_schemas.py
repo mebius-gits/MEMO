@@ -10,7 +10,13 @@ from memo.presentation.schemas import Identifier, Metrics, Schema
 class PersonalityConfig(Schema):
     name: Literal["MEMO"] = "MEMO"
     language: Literal["zh-TW"] = "zh-TW"
-    tone: Tone = Field(default=Tone.GENTLE, description="人格語氣：溫柔、活潑或簡潔。")
+    tone: Tone = Field(default=Tone.GENTLE, description="人格語氣：溫柔、活潑或簡潔；也用於備援模板。")
+    persona: str = Field(
+        default="",
+        max_length=300,
+        description="人格描述（角色與說話風格），交給模型扮演；只影響措辭，不改變事實或規則。",
+        examples=["愛吐槽的損友，語氣輕鬆幽默，但該提醒的一定講到。"],
+    )
 
 
 class HistoryMessage(Schema):

@@ -40,7 +40,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 stop,
                 app.state.session_factory,
                 app.state.interaction_service,
-                settings.llm_timeout_seconds,
+                settings.openai_timeout_seconds,
             ),
             daemon=True,
         )
@@ -51,7 +51,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         finally:
             stop.set()
             if dispatcher.is_alive():
-                await asyncio.to_thread(dispatcher.join, settings.llm_timeout_seconds + 5)
+                await asyncio.to_thread(dispatcher.join, settings.openai_timeout_seconds + 5)
             engine.dispose()
 
     app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)

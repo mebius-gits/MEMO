@@ -9,11 +9,11 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./memo.db"
     cors_origins: list[str] = []
     notifications_enabled: bool = True
-    # Chat Completions-compatible API; incomplete configuration uses templates.
-    llm_base_url: AnyHttpUrl | None = None
-    llm_model: str = ""
-    llm_api_key: SecretStr = SecretStr("")
-    llm_timeout_seconds: float = Field(default=30, gt=0, le=300)
+    # OpenAI-style Chat Completions settings; without a model name replies use templates.
+    openai_api_key: SecretStr = SecretStr("")
+    openai_base_url: AnyHttpUrl = AnyHttpUrl("https://api.openai.com/v1")
+    openai_model: str = ""
+    openai_timeout_seconds: float = Field(default=30, gt=0, le=300)
 
 
 class MqttSettings(BaseSettings):

@@ -28,11 +28,11 @@ uv run uvicorn memo.main:create_app --factory --reload --host 127.0.0.1
 Swagger：http://127.0.0.1:8000/docs；OpenAPI：http://127.0.0.1:8000/openapi.json。
 預設資料保存於 `memo.db`，重啟後保留。不在 API 啟動時自動建表，請先執行 migration。
 
-環境變數不使用前綴（例如 `DATABASE_URL`、`LLM_MODEL`，MQTT worker 使用 `MQTT_`）。將 `.env.example` 複製為 `.env` 後設定；Compose API 也會載入這個檔案，容器資料庫仍使用 `/data/memo.db`。
+環境變數不使用前綴（例如 `DATABASE_URL`；模型連線沿用 OpenAI 慣例的 `OPENAI_*`；MQTT worker 使用 `MQTT_`）。將 `.env.example` 複製為 `.env` 後設定；Compose API 也會載入這個檔案，容器資料庫仍使用 `/data/memo.db`。
 
-模型連線使用 `LLM_BASE_URL`（含 API 版本路徑）、`LLM_MODEL`、`LLM_API_KEY`、`LLM_TIMEOUT_SECONDS`。填入 URL 與模型名稱後會實際呼叫 Chat Completions 相容端點；未設定或呼叫失敗時使用明確標示的備援回覆。API key 僅放後端，設定物件以 `SecretStr` 遮蔽顯示。
+模型連線使用 `OPENAI_API_KEY`、`OPENAI_BASE_URL`（含 API 版本路徑，預設 `https://api.openai.com/v1`）、`OPENAI_MODEL`、`OPENAI_TIMEOUT_SECONDS`。填入模型名稱後會實際呼叫 Chat Completions 相容端點；未設定或呼叫失敗時使用明確標示的備援回覆。API key 僅放後端，設定物件以 `SecretStr` 遮蔽顯示。
 
-升級既有安裝時，請移除環境變數的舊 `MEMO_` 前綴（`MEMO_MQTT_*` 改為 `MQTT_*`），並同步更新 MQTT 發布端的 `memo/v1/` topic。既有本機資料庫需搬移至新預設路徑，或用 `DATABASE_URL` 指向原資料庫；Docker volume 路徑沒有變更。
+升級既有安裝時，請移除環境變數的舊 `MEMO_` 前綴（`MEMO_MQTT_*` 改為 `MQTT_*`；模型設定 `LLM_*` 改為 `OPENAI_*`），並同步更新 MQTT 發布端的 `memo/v1/` topic。既有本機資料庫需搬移至新預設路徑，或用 `DATABASE_URL` 指向原資料庫；Docker volume 路徑沒有變更。
 
 ## 分層與依賴
 

@@ -184,8 +184,8 @@ def test_configured_model_is_called_over_http(client):
         url = str(client.app.state.session_factory.kw["bind"].url)
         settings = Settings(
             database_url=url,
-            llm_base_url=f"http://127.0.0.1:{server.server_port}/v1",
-            llm_model="test-model",
+            openai_base_url=f"http://127.0.0.1:{server.server_port}/v1",
+            openai_model="test-model",
             notifications_enabled=False,
         )
         with TestClient(create_app(settings)) as configured:

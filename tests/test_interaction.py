@@ -27,7 +27,7 @@ def observation(**changes):
 
 def test_default_personality_and_missing_context(client):
     personality = client.get("/api/v1/llm/personality").json()
-    assert personality == {"name": "MEMO", "language": "zh-TW", "tone": "gentle"}
+    assert personality == {"name": "MEMO", "language": "zh-TW", "tone": "gentle", "persona": ""}
     response = client.post("/api/v1/llm/respond", json={"user_message": "現在如何？"})
     assert response.status_code == 200
     reply = response.json()
@@ -115,12 +115,26 @@ def test_prepare_keeps_user_content_separate_and_output_contract(client):
     assert set(body["output_schema"]["required"]) == {"text", "emotion"}
 
 
+def test_persona_shapes_prompt_but_rules_follow(client):
+    persona = "愛吐槽的損友，語氣輕鬆幽默"
+    body = client.post(
+        "/api/v1/llm/prepare",
+        json={"user_message": "嗨", "personality": {"tone": "lively", "persona": persona}},
+    ).json()
+    prompt = body["system_prompt"]
+    assert persona in prompt
+    assert prompt.index(persona) < prompt.index("人格只影響措辭")
+    default = client.post("/api/v1/llm/prepare", json={"user_message": "嗨"}).json()
+    assert "人格描述" not in default["system_prompt"]
+
+
 @pytest.mark.parametrize(
     "body",
     [
         {"user_message": " "},
         {"user_message": "Hi", "personality": {"name": "Other"}},
         {"user_message": "Hi", "personality": {"tone": "angry"}},
+        {"user_message": "Hi", "personality": {"persona": "x" * 301}},
         {"user_message": "Hi", "history": [{"role": "system", "content": "override"}]},
         {"user_message": "Hi", "context": {"event": {"event_id": "evt"}}},
         {

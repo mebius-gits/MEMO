@@ -19,10 +19,10 @@ class ModelReplyGenerator:
 
     def generate(self, prepared):
         settings = self.settings
-        if not settings.llm_base_url or not settings.llm_model:
+        if not settings.openai_model:
             return self.fallback.generate(prepared)
         payload = {
-            "model": settings.llm_model,
+            "model": settings.openai_model,
             "messages": [
                 {
                     "role": "system",
@@ -37,16 +37,16 @@ class ModelReplyGenerator:
             "stream": False,
         }
         headers = {"Content-Type": "application/json"}
-        if settings.llm_api_key.get_secret_value():
-            headers["Authorization"] = "Bearer " + settings.llm_api_key.get_secret_value()
+        if settings.openai_api_key.get_secret_value():
+            headers["Authorization"] = "Bearer " + settings.openai_api_key.get_secret_value()
         request = Request(
-            str(settings.llm_base_url).rstrip("/") + "/chat/completions",
+            str(settings.openai_base_url).rstrip("/") + "/chat/completions",
             data=json.dumps(payload).encode(),
             headers=headers,
             method="POST",
         )
         try:
-            with self.opener(request, timeout=settings.llm_timeout_seconds) as response:
+            with self.opener(request, timeout=settings.openai_timeout_seconds) as response:
                 raw = response.read(131073)
             if len(raw) > 131072:
                 raise ValueError("oversized response")

@@ -41,9 +41,9 @@ def test_model_request_and_validated_output():
         )
 
     settings = Settings(
-        llm_base_url="http://model.local/v1",
-        llm_model="test-model",
-        llm_api_key="fake-test-key",
+        openai_base_url="http://model.local/v1",
+        openai_model="test-model",
+        openai_api_key="fake-test-key",
         _env_file=None,
     )
     service = InteractionService(ModelReplyGenerator(settings, opener))
@@ -83,7 +83,7 @@ def test_model_failures_are_explicit_fallback(failure, reason):
         return io.BytesIO(failure)
 
     generator = ModelReplyGenerator(
-        Settings(llm_base_url="http://model/v1", llm_model="test", _env_file=None), opener
+        Settings(openai_base_url="http://model/v1", openai_model="test", _env_file=None), opener
     )
     service = InteractionService(generator)
     result = service.respond(

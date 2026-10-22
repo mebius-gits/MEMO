@@ -967,8 +967,16 @@ components:
           default: zh-TW
         tone:
           $ref: '#/components/schemas/Tone'
-          description: 人格語氣：溫柔、活潑或簡潔。
+          description: 人格語氣：溫柔、活潑或簡潔；也用於備援模板。
           default: gentle
+        persona:
+          type: string
+          maxLength: 300
+          title: Persona
+          description: 人格描述（角色與說話風格），交給模型扮演；只影響措辭，不改變事實或規則。
+          default: ''
+          examples:
+          - 愛吐槽的損友，語氣輕鬆幽默，但該提醒的一定講到。
       additionalProperties: false
       type: object
       title: PersonalityConfig

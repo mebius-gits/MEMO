@@ -22,6 +22,7 @@ class Personality:
     name: str = "MEMO"
     language: str = "zh-TW"
     tone: Tone = Tone.GENTLE
+    persona: str = ""
 
 
 @dataclass(frozen=True)
