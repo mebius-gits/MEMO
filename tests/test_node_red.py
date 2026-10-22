@@ -31,7 +31,7 @@ def test_compose_and_flow(tmp_path, monkeypatch):
     script = """
 const fs = require('fs');
 const nodes = JSON.parse(fs.readFileSync('node-red/flows.json', 'utf8'));
-const env = {get: key => ({MEMO_API_URL:'http://api:8000', MEMO_DEVICE_ID:'room01'})[key]};
+const env = {get: key => ({API_URL:'http://api:8000', DEVICE_ID:'room01'})[key]};
 const requests = {};
 const values = {};
 const flow = {get: key => values[key], set: (key, value) => { values[key] = value; }};
@@ -46,7 +46,7 @@ console.log(JSON.stringify(requests));
     )
     requests = json.loads(result.stdout)
     url = f"sqlite:///{(tmp_path / 'flow.db').as_posix()}"
-    monkeypatch.setenv("MEMO_DATABASE_URL", url)
+    monkeypatch.setenv("DATABASE_URL", url)
     command.upgrade(Config("alembic.ini"), "head")
     with TestClient(create_app(Settings(database_url=url))) as client:
         for key, status in [

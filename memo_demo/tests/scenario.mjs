@@ -1,7 +1,7 @@
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 
-const api = process.env.MEMO_TEST_API || 'http://localhost:8100';
+const api = process.env.TEST_API_URL || 'http://localhost:8100';
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true, args: ['--enable-unsafe-swiftshader', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'] });
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 1000 } });

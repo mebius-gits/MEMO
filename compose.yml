@@ -8,9 +8,9 @@ services:
       - path: .env
         required: false
     environment:
-      MEMO_APP_NAME: MEMO
-      MEMO_CORS_ORIGINS: ${MEMO_CORS_ORIGINS:-["http://localhost:5173","http://127.0.0.1:5173","https://memo-quiet-room.fancyhen36.chatgpt.site"]}
-      MEMO_DATABASE_URL: sqlite:////data/memo.db
+      APP_NAME: MEMO
+      CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:5173","http://127.0.0.1:5173","https://memo-quiet-room.fancyhen36.chatgpt.site"]}
+      DATABASE_URL: sqlite:////data/memo.db
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
@@ -32,9 +32,9 @@ services:
         condition: service_healthy
     environment:
       TZ: Asia/Taipei
-      MEMO_API_URL: http://api:8000
-      MEMO_DEVICE_ID: room01
-      MEMO_MQTT_HOST: broker
+      API_URL: http://api:8000
+      DEVICE_ID: room01
+      MQTT_HOST: broker
     ports:
       - "127.0.0.1:1880:1880"
     volumes:
@@ -59,9 +59,9 @@ services:
     restart: unless-stopped
     command: ["python", "-m", "memo.workers.environment"]
     environment:
-      MEMO_DATABASE_URL: sqlite:////data/memo.db
-      MEMO_MQTT_HOST: broker
-      MEMO_MQTT_CLIENT_ID: memo-environment-worker
+      DATABASE_URL: sqlite:////data/memo.db
+      MQTT_HOST: broker
+      MQTT_CLIENT_ID: memo-environment-worker
     volumes:
       - memo-data:/data
     depends_on:
@@ -82,7 +82,7 @@ services:
     restart: unless-stopped
     command: ["python", "-m", "memo.workers.simulator", "--api-url", "http://api:8000"]
     environment:
-      MEMO_MQTT_HOST: broker
+      MQTT_HOST: broker
     depends_on:
       environment-worker:
         condition: service_healthy

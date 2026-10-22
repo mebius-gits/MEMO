@@ -60,14 +60,14 @@ Node-RED 也提供「MEMO MQTT 持續感測」分頁，按開始後每 5 秒發�
 
 | 變數 | 預設 |
 | --- | --- |
-| MEMO_DATABASE_URL | sqlite:///./memo.db；Compose 使用 /data/memo.db |
-| MEMO_MQTT_HOST | localhost；Compose 使用 broker |
-| MEMO_MQTT_PORT | 1883 |
-| MEMO_MQTT_CLIENT_ID | memo-environment-worker |
-| MEMO_MQTT_QUEUE_SIZE | 256 |
-| MEMO_MQTT_MAX_PAYLOAD_BYTES | 16384 |
-| MEMO_MQTT_USERNAME / PASSWORD | 未設定 |
-| MEMO_MQTT_TLS | false |
+| DATABASE_URL | sqlite:///./memo.db；Compose 使用 /data/memo.db |
+| MQTT_HOST | localhost；Compose 使用 broker |
+| MQTT_PORT | 1883 |
+| MQTT_CLIENT_ID | memo-environment-worker |
+| MQTT_QUEUE_SIZE | 256 |
+| MQTT_MAX_PAYLOAD_BYTES | 16384 |
+| MQTT_USERNAME / PASSWORD | 未設定 |
+| MQTT_TLS | false |
 
 本機手動啟動 Worker：`uv run python -m memo.workers.environment`。先執行 migration 並啟動 broker。
 

@@ -17,7 +17,7 @@ try {
   await page.waitForTimeout(1500);
   assert.equal(await page.locator('#webgl-fallback').isVisible(), false);
   await page.getByRole('button', { name: '連線設定' }).click();
-  await page.locator('#api-url').fill(process.env.MEMO_TEST_API || 'http://localhost:8000');
+  await page.locator('#api-url').fill(process.env.TEST_API_URL || 'http://localhost:8000');
   await page.locator('#connect-button').click();
   await page.waitForFunction(() => document.querySelector('#connection-label').textContent === '已連接後端');
   await page.locator('#simulation-toggle').click();

@@ -57,7 +57,7 @@
         "register-http"
       ]
     ],
-    "func": "const base = (env.get('MEMO_API_URL') || 'http://api:8000').replace(/\\/$/, '');\nconst device = env.get('MEMO_DEVICE_ID') || 'room01';\nmsg.method = 'POST';\nmsg.url = base + '/api/v1/devices';\nmsg.headers = {'Content-Type':'application/json'};\nmsg.payload = {id: device, name: 'MEMO 模擬裝置', location:'示範空間'};\nreturn msg;",
+    "func": "const base = (env.get('API_URL') || 'http://api:8000').replace(/\\/$/, '');\nconst device = env.get('DEVICE_ID') || 'room01';\nmsg.method = 'POST';\nmsg.url = base + '/api/v1/devices';\nmsg.headers = {'Content-Type':'application/json'};\nmsg.payload = {id: device, name: 'MEMO 模擬裝置', location:'示範空間'};\nreturn msg;",
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,
@@ -140,7 +140,7 @@
         "telemetry-http"
       ]
     ],
-    "func": "const base = (env.get('MEMO_API_URL') || 'http://api:8000').replace(/\\/$/, '');\nconst device = env.get('MEMO_DEVICE_ID') || 'room01';\nmsg.method = 'POST';\nmsg.url = base + '/api/v1/telemetry';\nmsg.headers = {'Content-Type':'application/json'};\nmsg.payload = {schema_version:1, message_id:device + '-' + Date.now() + '-' + msg._msgid, device_id:device, observed_at:new Date().toISOString(), sequence:1, metrics:{temperature_c:29.2, humidity_pct:65, co2_ppm:1100}, quality:'ok'};\nreturn msg;",
+    "func": "const base = (env.get('API_URL') || 'http://api:8000').replace(/\\/$/, '');\nconst device = env.get('DEVICE_ID') || 'room01';\nmsg.method = 'POST';\nmsg.url = base + '/api/v1/telemetry';\nmsg.headers = {'Content-Type':'application/json'};\nmsg.payload = {schema_version:1, message_id:device + '-' + Date.now() + '-' + msg._msgid, device_id:device, observed_at:new Date().toISOString(), sequence:1, metrics:{temperature_c:29.2, humidity_pct:65, co2_ppm:1100}, quality:'ok'};\nreturn msg;",
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,
@@ -244,7 +244,7 @@
         "history-http"
       ]
     ],
-    "func": "const base = (env.get('MEMO_API_URL') || 'http://api:8000').replace(/\\/$/, '');\nconst device = env.get('MEMO_DEVICE_ID') || 'room01';\nmsg.method = 'GET';\nmsg.url = base + '/api/v1/devices/' + encodeURIComponent(device) + '/readings?limit=10';\nmsg.headers = {};\ndelete msg.payload;\nreturn msg;",
+    "func": "const base = (env.get('API_URL') || 'http://api:8000').replace(/\\/$/, '');\nconst device = env.get('DEVICE_ID') || 'room01';\nmsg.method = 'GET';\nmsg.url = base + '/api/v1/devices/' + encodeURIComponent(device) + '/readings?limit=10';\nmsg.headers = {};\ndelete msg.payload;\nreturn msg;",
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,
@@ -365,7 +365,7 @@
         "health-http"
       ]
     ],
-    "func": "const base = (env.get('MEMO_API_URL') || 'http://api:8000').replace(/\\/$/, '');\nconst device = env.get('MEMO_DEVICE_ID') || 'room01';\nmsg.method = 'GET';\nmsg.url = base + '/health/ready';\nmsg.headers = {};\ndelete msg.payload;\nreturn msg;",
+    "func": "const base = (env.get('API_URL') || 'http://api:8000').replace(/\\/$/, '');\nconst device = env.get('DEVICE_ID') || 'room01';\nmsg.method = 'GET';\nmsg.url = base + '/health/ready';\nmsg.headers = {};\ndelete msg.payload;\nreturn msg;",
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,
@@ -533,7 +533,7 @@
     "initialize": "",
     "finalize": "",
     "libs": [],
-    "func": "const base = (env.get('MEMO_API_URL') || 'http://api:8000').replace(/\\/$/, '');\nmsg.method = 'POST';\nmsg.url = base + '/api/v1/llm/respond';\nmsg.headers = {'Content-Type':'application/json'};\nmsg.payload = {\n  user_message:'MEMO，請摘要這筆模擬環境資料。',\n  personality:{name:'MEMO', language:'zh-TW', tone:'gentle'},\n  context:{device_id:env.get('MEMO_DEVICE_ID') || 'room01', observation:{\n    observed_at:new Date().toISOString(),\n    metrics:{temperature_c:29.2, humidity_pct:65, co2_ppm:1100}, quality:'ok'\n  }}\n};\nreturn msg;"
+    "func": "const base = (env.get('API_URL') || 'http://api:8000').replace(/\\/$/, '');\nmsg.method = 'POST';\nmsg.url = base + '/api/v1/llm/respond';\nmsg.headers = {'Content-Type':'application/json'};\nmsg.payload = {\n  user_message:'MEMO，請摘要這筆模擬環境資料。',\n  personality:{name:'MEMO', language:'zh-TW', tone:'gentle'},\n  context:{device_id:env.get('DEVICE_ID') || 'room01', observation:{\n    observed_at:new Date().toISOString(),\n    metrics:{temperature_c:29.2, humidity_pct:65, co2_ppm:1100}, quality:'ok'\n  }}\n};\nreturn msg;"
   },
   {
     "id": "llm-http",
@@ -801,7 +801,7 @@
         "mqtt-register-http"
       ]
     ],
-    "func": "const base = (env.get('MEMO_API_URL') || 'http://api:8000').replace(/\\/$/, '');\nconst device = env.get('MEMO_DEVICE_ID') || 'room01';\nmsg.method = 'POST';\nmsg.url = base + '/api/v1/devices';\nmsg.headers = {'Content-Type':'application/json'};\nmsg.payload = {id: device, name: 'MEMO 模擬裝置', location:'示範空間'};\nreturn msg;",
+    "func": "const base = (env.get('API_URL') || 'http://api:8000').replace(/\\/$/, '');\nconst device = env.get('DEVICE_ID') || 'room01';\nmsg.method = 'POST';\nmsg.url = base + '/api/v1/devices';\nmsg.headers = {'Content-Type':'application/json'};\nmsg.payload = {id: device, name: 'MEMO 模擬裝置', location:'示範空間'};\nreturn msg;",
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,
@@ -884,7 +884,7 @@
         "mqtt-publish"
       ]
     ],
-    "func": "const device = env.get('MEMO_DEVICE_ID') || 'room01';\nconst sequence = (flow.get('memo_mqtt_sequence') || 0) + 1;\nflow.set('memo_mqtt_sequence', sequence);\nmsg.topic = 'memo/v1/' + device + '/telemetry';\nmsg.payload = {schema_version:1, message_id:device + '-' + Date.now() + '-' + msg._msgid,\n  device_id:device, observed_at:new Date().toISOString(), sequence:sequence,\n  metrics:{temperature_c:25.5, humidity_pct:60, co2_ppm:800}, quality:'ok'};\nreturn msg;",
+    "func": "const device = env.get('DEVICE_ID') || 'room01';\nconst sequence = (flow.get('memo_mqtt_sequence') || 0) + 1;\nflow.set('memo_mqtt_sequence', sequence);\nmsg.topic = 'memo/v1/' + device + '/telemetry';\nmsg.payload = {schema_version:1, message_id:device + '-' + Date.now() + '-' + msg._msgid,\n  device_id:device, observed_at:new Date().toISOString(), sequence:sequence,\n  metrics:{temperature_c:25.5, humidity_pct:60, co2_ppm:800}, quality:'ok'};\nreturn msg;",
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,
@@ -959,7 +959,7 @@
     "id": "memo-broker",
     "type": "mqtt-broker",
     "name": "MEMO Mosquitto",
-    "broker": "${MEMO_MQTT_HOST}",
+    "broker": "${MQTT_HOST}",
     "port": "1883",
     "clientid": "memo-node-red-demo",
     "autoConnect": true,

@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="MEMO_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="", env_file=".env", extra="ignore")
 
     app_name: str = "MEMO"
     database_url: str = "sqlite:///./memo.db"
@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
 
 class MqttSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="MEMO_MQTT_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="MQTT_", env_file=".env", extra="ignore")
 
     host: str = "localhost"
     port: int = Field(default=1883, ge=1, le=65535)

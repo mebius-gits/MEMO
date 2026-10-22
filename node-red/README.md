@@ -28,7 +28,7 @@ API 容器會自動執行 Alembic migration，通過健康檢查後才啟動 Nod
 
 ## 設定與保存
 
-「MEMO MQTT 持續感測」分頁可按開始／停止控制每 5 秒的傳送。資料經 MQTT broker → environment-worker 寫入，再到原本的環境感測分頁查詢歷史。MQTT 主機使用 `MEMO_MQTT_HOST=broker`，QoS 1、retain=false。詳見 [MQTT 說明](../docs/mqtt-worker.md)。
+「MEMO MQTT 持續感測」分頁可按開始／停止控制每 5 秒的傳送。資料經 MQTT broker → environment-worker 寫入，再到原本的環境感測分頁查詢歷史。MQTT 主機使用 `MQTT_HOST=broker`，QoS 1、retain=false。詳見 [MQTT 說明](../docs/mqtt-worker.md)。
 
 「MEMO 文字與情緒」分頁提供 LLM 契約測試。按「測試 MEMO 文字＋情緒」後會送出人格與模擬上下文，分別顯示文字、情緒強度與完整回應。目前來源為 template，不呼叫外部模型，也不將這筆模擬數據寫入資料庫。可在「設定人格與模擬上下文」節點更改 tone 為 gentle / lively / concise。詳細欄位見 [LLM 介面說明](../docs/llm-api.md)。
 
@@ -38,8 +38,8 @@ API 容器會自動執行 Alembic migration，通過健康檢查後才啟動 Nod
 
 | 變數 | 預設 | 用途 |
 | --- | --- | --- |
-| MEMO_API_URL | http://api:8000 | Compose 網路內的 API URL |
-| MEMO_DEVICE_ID | room01 | 示範裝置 ID |
+| API_URL | http://api:8000 | Compose 網路內的 API URL |
+| DEVICE_ID | room01 | 示範裝置 ID |
 | TZ | Asia/Taipei | Node-RED 時區 |
 
 裝置 ID 限英文字母、數字、底線或連字號，長度 1–64。

@@ -3,7 +3,7 @@ import { createMemoScene } from './scene.js';
 
 const $ = selector => document.querySelector(selector);
 const storage = { get(key) { try { return localStorage.getItem(key); } catch { return null; } }, set(key, value) { try { localStorage.setItem(key, value); } catch { /* Private browsers may block storage. */ } } };
-const defaultApiBase = (import.meta.env.VITE_MEMO_API_URL || '').trim();
+const defaultApiBase = (import.meta.env.VITE_API_URL || '').trim();
 let apiBase = storage.get('memo.apiBase') ?? defaultApiBase, activeDevice = '', readings = [], devices = [];
 let refreshing = false, chatting = false, generation = 0, toastTimer, connected = false;
 const sessionId = storage.get('memo.sessionId') || crypto.randomUUID();

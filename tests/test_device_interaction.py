@@ -12,7 +12,7 @@ from memo.main import create_app
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     url = f"sqlite:///{(tmp_path / 'web.db').as_posix()}"
-    monkeypatch.setenv("MEMO_DATABASE_URL", url)
+    monkeypatch.setenv("DATABASE_URL", url)
     command.upgrade(Config("alembic.ini"), "head")
     settings = Settings(database_url=url, cors_origins=["https://memo.example"])
     with TestClient(create_app(settings)) as client:
