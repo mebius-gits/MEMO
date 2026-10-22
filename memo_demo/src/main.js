@@ -97,7 +97,7 @@ function normalizeUrl(value) {
 async function request(path, options = {}, base = apiBase) {
   if (!base) throw new Error('尚未設定 VITE_API_URL。');
   let response;
-  try { response = await fetch(`${base}${path}`, { ...options, signal: AbortSignal.timeout(path.endsWith('/interaction') ? 45000 : 12000), headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers } }); }
+  try { response = await fetch(`${base}${path}`, { ...options, signal: AbortSignal.timeout(/\/(interaction|digest)$/.test(path) ? 45000 : 12000), headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers } }); }
   catch { throw new Error('無法連接後端。請檢查網址、HTTPS、CORS 或網路連線。'); }
   if (!response.ok) {
     const error = new Error(response.status === 404 ? '找不到這個裝置或 API，請確認後端已更新。' : `後端回應錯誤（${response.status}），請稍後再試。`);
@@ -265,6 +265,14 @@ async function syncCompanion(device, currentGeneration) {
     const last = turns.at(-1);
     if (!chatting) say(last ? last.response.text : '我在這裡。空間有值得留意的變化時，我會輕輕告訴你。', { quote: last?.user_text });
     conversationScope = scope;
+    // Back after a while: one or two sentences on what MEMO said while nobody was here.
+    const lastSeen = Number(storage.get('memo.lastSeen')) || 0;
+    if (lastSeen && Date.now() - lastSeen > 120000) {
+      try {
+        const digest = await request(`/api/v1/devices/${encodeURIComponent(device)}/digest`, { method: 'POST', body: JSON.stringify({ since: new Date(lastSeen).toISOString() }) });
+        if (digest.text && generation === currentGeneration) announce(digest.text, digest.emotion);
+      } catch { /* A digest is a courtesy; never block the page on it. */ }
+    }
   }
   const tasks = await request(`/api/v1/devices/${encodeURIComponent(device)}/notifications`);
   if (generation !== currentGeneration || activeDevice !== device) return;
@@ -275,6 +283,7 @@ async function syncCompanion(device, currentGeneration) {
     try { await request(`/api/v1/devices/${encodeURIComponent(device)}/notifications/ack`, { method: 'POST', body: JSON.stringify({ task_id: task.id }) }); }
     catch (error) { if (error.status !== 409) throw error; }
   }
+  storage.set('memo.lastSeen', String(Date.now()));
 }
 say('嗨，我是 MEMO。\n我就在這裡，陪你看看今天的空間。');
 if (apiBase) {
