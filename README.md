@@ -12,6 +12,8 @@ docker compose up -d --build
 
 目前 Compose 也包含 Mosquitto 與獨立 MQTT environment-worker。要每 5 秒持續模擬資料，執行 `docker compose --profile demo up -d --build --wait`。接收流程、設定與驗證方式見 [MQTT Worker 說明](docs/mqtt-worker.md)。
 
+Compose 另含本機語音服務 `speech`（http://localhost:8001），在 CPU 上執行，不需 GPU，詳見 [語音服務說明](speech/README.md)。
+
 依 `environment_ai_plan.md` 建立的 Clean Architecture 後端。這一版完成裝置與感測歷史的 HTTP 流程，讓後續 MQTT、規則引擎與 AI 可以沿用 application 層。
 
 ## 本機啟動（PowerShell）
