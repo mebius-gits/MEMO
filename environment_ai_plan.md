@@ -58,11 +58,11 @@ MQTT 回呼只負責快速驗證封包並放入有容量上限的接收佇列，
 
 | 主題 | 用途 | Retain 建議 |
 | --- | --- | --- |
-| buddy/v1/{device_id}/telemetry | 感測資料 | false |
-| buddy/v1/{device_id}/status | 上線、離線、心跳、能力 | true，仍檢查時間 |
-| buddy/v1/{device_id}/events | 後端產生的事件 | false |
-| buddy/v1/{device_id}/commands | 播放、表情等指令 | false |
-| buddy/v1/{device_id}/acks | 裝置執行確認 | false |
+| memo/v1/{device_id}/telemetry | 感測資料 | false |
+| memo/v1/{device_id}/status | 上線、離線、心跳、能力 | true，仍檢查時間 |
+| memo/v1/{device_id}/events | 後端產生的事件 | false |
+| memo/v1/{device_id}/commands | 播放、表情等指令 | false |
+| memo/v1/{device_id}/acks | 裝置執行確認 | false |
 
 示意資料：
 

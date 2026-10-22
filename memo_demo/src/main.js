@@ -3,7 +3,8 @@ import { createMemoScene } from './scene.js';
 
 const $ = selector => document.querySelector(selector);
 const storage = { get(key) { try { return localStorage.getItem(key); } catch { return null; } }, set(key, value) { try { localStorage.setItem(key, value); } catch { /* Private browsers may block storage. */ } } };
-let apiBase = storage.get('memo.apiBase') || '', activeDevice = '', readings = [], devices = [];
+const defaultApiBase = (import.meta.env.VITE_MEMO_API_URL || '').trim();
+let apiBase = storage.get('memo.apiBase') ?? defaultApiBase, activeDevice = '', readings = [], devices = [];
 let refreshing = false, chatting = false, generation = 0, toastTimer, connected = false;
 let companion;
 try { companion = createMemoScene($('#scene')); } catch (error) { $('#webgl-fallback').hidden = false; console.warn('3D unavailable', error.message); }
@@ -144,6 +145,9 @@ $('#publish-simulation').onclick = async () => {
   } catch (error) { toast(error.message); }
   finally { button.disabled = false; }
 };
-if (apiBase) refresh();
+if (apiBase) {
+  try { apiBase = normalizeUrl(apiBase); refresh(); }
+  catch (error) { apiBase = ''; toast(error.message); }
+}
 const interval = setInterval(() => { if (!document.hidden) refresh(); }, 5000);
 window.addEventListener('pagehide', () => { clearInterval(interval); companion?.dispose(); });

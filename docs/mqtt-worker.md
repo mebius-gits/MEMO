@@ -4,7 +4,7 @@
 
 ```text
 Node-RED／Python 模擬器／感測器
-  → buddy/v1/{device_id}/telemetry（QoS 1、retain=false）
+  → memo/v1/{device_id}/telemetry（QoS 1、retain=false）
   → Mosquitto broker
   → 獨立 environment-worker
   → 有上限的接收佇列
@@ -42,7 +42,7 @@ Node-RED 也提供「MEMO MQTT 持續感測」分頁，按開始後每 5 秒發�
 
 ## 資料契約與處理語意
 
-- MQTT topic 沿用規劃文件的 `buddy/v1/{device_id}/telemetry`；角色名稱為 MEMO，不改動 wire protocol。
+- MQTT topic 統一為 `memo/v1/{device_id}/telemetry`；舊發布端與既有 Node-RED flow 必須同步更新 topic，並重啟 Worker。
 - payload 使用原有 HTTP telemetry JSON 格式；topic 的裝置 ID 必須與 payload 相同。
 - 裝置必須先透過 POST /api/v1/devices 註冊。未知裝置訊息會被拒絕。
 - 需要 QoS 1。訂閱時重播的 retained 資料會被拒絕，發布者應使用 retain=false。MQTT 3.1.1 無法僅憑即時訂閱訊息判斷發布者原先是否設了 retain。
@@ -60,7 +60,7 @@ Node-RED 也提供「MEMO MQTT 持續感測」分頁，按開始後每 5 秒發�
 
 | 變數 | 預設 |
 | --- | --- |
-| BUDDY_DATABASE_URL | sqlite:///./buddy.db；Compose 使用 /data/memo.db |
+| MEMO_DATABASE_URL | sqlite:///./memo.db；Compose 使用 /data/memo.db |
 | MEMO_MQTT_HOST | localhost；Compose 使用 broker |
 | MEMO_MQTT_PORT | 1883 |
 | MEMO_MQTT_CLIENT_ID | memo-environment-worker |

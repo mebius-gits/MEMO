@@ -7,10 +7,15 @@
 ```powershell
 cd memo_demo
 npm ci
+Copy-Item .env.example .env.local
 npm run dev
 ```
 
 開啟 http://localhost:5173，右上角設定後端網址，例如 `http://localhost:8000`。網址只填 origin，不加 `/api/v1`。
+
+`.env.local` 的 `VITE_MEMO_API_URL` 提供預設後端網址。優先序：瀏覽器已儲存的設定（包含主動斷線）→ env 預設值 → 未連線。要套用新的預設值，可在瀏覽器清除 `memo.apiBase` 的 localStorage，或直接從設定視窗更改網址。
+
+Vite 在開發啟動／建置時讀取 env；修改後須重新啟動或重新建置發布。正式環境可使用 `.env.production` 設定 HTTPS 後端網址。`VITE_*` 會公開在網頁程式中，勿放入模型 API key。
 
 ```powershell
 npm run build
@@ -21,10 +26,10 @@ npm run preview
 
 ## 後端連線
 
-已發布的 HTTPS 網站需要瀏覽器可連到的 HTTPS API。後端設定 `BUDDY_CORS_ORIGINS` JSON 陣列，允許網站的完整 origin：
+已發布的 HTTPS 網站需要瀏覽器可連到的 HTTPS API。後端設定 `MEMO_CORS_ORIGINS` JSON 陣列，允許網站的完整 origin：
 
 ```dotenv
-BUDDY_CORS_ORIGINS=["http://localhost:5173","http://127.0.0.1:5173","https://memo-quiet-room.fancyhen36.chatgpt.site"]
+MEMO_CORS_ORIGINS=["http://localhost:5173","http://127.0.0.1:5173","https://memo-quiet-room.fancyhen36.chatgpt.site"]
 ```
 
 網站每 5 秒讀取裝置與環境資料，過期資料會標示狀態。尚未設定網址時不會顯示假讀值。網址只儲存在目前瀏覽器。

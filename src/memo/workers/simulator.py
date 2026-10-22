@@ -79,7 +79,7 @@ def main():
                 },
             }
             info = client.publish(
-                f"buddy/v1/{device.id}/telemetry", json.dumps(payload), qos=1, retain=False
+                f"memo/v1/{device.id}/telemetry", json.dumps(payload), qos=1, retain=False
             )
             info.wait_for_publish(timeout=10)
             if not info.is_published():

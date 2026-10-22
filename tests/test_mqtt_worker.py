@@ -43,7 +43,7 @@ def delivery(**changes):
         "metrics": {"temperature_c": 27.5},
     } | changes
     return Delivery(
-        "buddy/v1/room01/telemetry",
+        "memo/v1/room01/telemetry",
         json.dumps(payload).encode(),
         1,
         1,
@@ -83,9 +83,9 @@ def test_terminal_errors_are_not_stored(worker, kind):
     if kind == "invalid_json":
         message = replace(message, payload=b"invalid")
     elif kind == "topic_mismatch":
-        message = replace(message, topic="buddy/v1/another/telemetry")
+        message = replace(message, topic="memo/v1/another/telemetry")
     elif kind == "unknown_device":
-        message = replace(delivery(device_id="unknown"), topic="buddy/v1/unknown/telemetry")
+        message = replace(delivery(device_id="unknown"), topic="memo/v1/unknown/telemetry")
     elif kind == "invalid_metric":
         message = delivery(metrics={"humidity_pct": 200})
     elif kind == "retained":

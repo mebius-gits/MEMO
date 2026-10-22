@@ -1,13 +1,18 @@
-from pydantic import Field
+from pydantic import AnyHttpUrl, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="BUDDY_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="MEMO_", env_file=".env", extra="ignore")
 
     app_name: str = "MEMO"
-    database_url: str = "sqlite:///./buddy.db"
+    database_url: str = "sqlite:///./memo.db"
     cors_origins: list[str] = []
+    # Connection settings reserved for the future model adapter; replies remain templates.
+    llm_base_url: AnyHttpUrl | None = None
+    llm_model: str = ""
+    llm_api_key: SecretStr = SecretStr("")
+    llm_timeout_seconds: float = Field(default=30, gt=0, le=300)
 
 
 class MqttSettings(BaseSettings):
@@ -16,7 +21,7 @@ class MqttSettings(BaseSettings):
     host: str = "localhost"
     port: int = Field(default=1883, ge=1, le=65535)
     client_id: str = Field(default="memo-environment-worker", min_length=1)
-    topic: str = "buddy/v1/+/telemetry"
+    topic: str = "memo/v1/+/telemetry"
     queue_size: int = Field(default=256, ge=1, le=10000)
     max_payload_bytes: int = Field(default=16384, ge=1, le=1048576)
     username: str | None = None

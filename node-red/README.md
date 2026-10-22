@@ -44,7 +44,7 @@ API 容器會自動執行 Alembic migration，通過健康檢查後才啟動 Nod
 
 裝置 ID 限英文字母、數字、底線或連字號，長度 1–64。
 
-- `memo-data`：API SQLite `/data/memo.db`，與本機 `buddy.db` 分開。
+- `memo-data`：API SQLite `/data/memo.db`，與本機 `memo.db` 分開。
 - `node-red-data`：Node-RED 流程、設定與編輯內容。
 - `docker compose down` 保留資料，重新啟動會沿用。
 - 編輯器修改後按 Deploy 即會保存。既有 volume 不會被重新 build 的範例覆蓋；要更新既有流程，請在編輯器刪除舊範例 tab，再 Import 本目錄的 `flows.json` 並 Deploy。

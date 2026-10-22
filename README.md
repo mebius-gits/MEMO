@@ -26,7 +26,13 @@ uv run uvicorn memo.main:create_app --factory --reload --host 127.0.0.1
 ```
 
 Swagger：http://127.0.0.1:8000/docs；OpenAPI：http://127.0.0.1:8000/openapi.json。
-預設資料保存於 `buddy.db`，重啟後保留。不在 API 啟動時自動建表，請先執行 migration。
+預設資料保存於 `memo.db`，重啟後保留。不在 API 啟動時自動建表，請先執行 migration。
+
+環境變數統一使用 `MEMO_` 前綴。將 `.env.example` 複製為 `.env` 後設定；Compose API 也會載入這個檔案，容器資料庫仍使用 `/data/memo.db`。
+
+模型連線預留 `MEMO_LLM_BASE_URL`（含 API 版本路徑）、`MEMO_LLM_MODEL`、`MEMO_LLM_API_KEY`、`MEMO_LLM_TIMEOUT_SECONDS`。目前回覆仍使用模板，這些設定尚未啟用外部模型呼叫。API key 僅放後端，設定物件以 `SecretStr` 遮蔽顯示。
+
+升級既有安裝時，請同步更新環境變數名稱與 MQTT 發布端的 `memo/v1/` topic。既有本機資料庫需搬移至新預設路徑，或用 `MEMO_DATABASE_URL` 指向原資料庫；Docker volume 路徑沒有變更。
 
 ## 分層與依賴
 
@@ -90,7 +96,7 @@ uv run alembic check
 `uv.lock` 鎖定實際依賴版本。使用 PostgreSQL 時先建立資料庫，再修改 `.env`：
 
 ```dotenv
-BUDDY_DATABASE_URL=postgresql+psycopg://buddy:password@localhost:5432/buddy
+MEMO_DATABASE_URL=postgresql+psycopg://memo:password@localhost:5432/memo
 ```
 
 接著執行 `uv run alembic upgrade head`。目前自動測試使用 SQLite；PostgreSQL 需另做環境整合驗證。

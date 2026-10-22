@@ -4,10 +4,13 @@ services:
   api:
     build: .
     restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
     environment:
-      BUDDY_APP_NAME: MEMO
-      BUDDY_CORS_ORIGINS: '["http://localhost:5173","http://127.0.0.1:5173","https://memo-quiet-room.fancyhen36.chatgpt.site"]'
-      BUDDY_DATABASE_URL: sqlite:////data/memo.db
+      MEMO_APP_NAME: MEMO
+      MEMO_CORS_ORIGINS: ${MEMO_CORS_ORIGINS:-["http://localhost:5173","http://127.0.0.1:5173","https://memo-quiet-room.fancyhen36.chatgpt.site"]}
+      MEMO_DATABASE_URL: sqlite:////data/memo.db
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
@@ -56,7 +59,7 @@ services:
     restart: unless-stopped
     command: ["python", "-m", "memo.workers.environment"]
     environment:
-      BUDDY_DATABASE_URL: sqlite:////data/memo.db
+      MEMO_DATABASE_URL: sqlite:////data/memo.db
       MEMO_MQTT_HOST: broker
       MEMO_MQTT_CLIENT_ID: memo-environment-worker
     volumes:

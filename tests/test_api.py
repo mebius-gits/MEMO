@@ -10,7 +10,7 @@ from memo.main import create_app
 @pytest.fixture
 def settings(tmp_path, monkeypatch):
     url = f"sqlite:///{(tmp_path / 'test.db').as_posix()}"
-    monkeypatch.setenv("BUDDY_DATABASE_URL", url)
+    monkeypatch.setenv("MEMO_DATABASE_URL", url)
     command.upgrade(Config("alembic.ini"), "head")
     return Settings(database_url=url, _env_file=None)
 

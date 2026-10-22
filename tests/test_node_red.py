@@ -46,7 +46,7 @@ console.log(JSON.stringify(requests));
     )
     requests = json.loads(result.stdout)
     url = f"sqlite:///{(tmp_path / 'flow.db').as_posix()}"
-    monkeypatch.setenv("BUDDY_DATABASE_URL", url)
+    monkeypatch.setenv("MEMO_DATABASE_URL", url)
     command.upgrade(Config("alembic.ini"), "head")
     with TestClient(create_app(Settings(database_url=url))) as client:
         for key, status in [

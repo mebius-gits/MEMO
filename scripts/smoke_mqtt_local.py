@@ -55,7 +55,7 @@ def exercise(port, directory):
                 }
             )
             for _ in range(2):
-                info = publisher.publish("buddy/v1/smoke/telemetry", payload, qos=1)
+                info = publisher.publish("memo/v1/smoke/telemetry", payload, qos=1)
                 info.wait_for_publish(5)
                 assert info.is_published()
 

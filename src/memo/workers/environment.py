@@ -43,7 +43,7 @@ def decode(delivery: Delivery) -> TelemetryInput:
     if delivery.qos != 1 or delivery.retained:
         raise ValueError("telemetry requires QoS 1 and retain=false")
     payload = TelemetryInput.model_validate_json(delivery.payload)
-    if delivery.topic != f"buddy/v1/{payload.device_id}/telemetry":
+    if delivery.topic != f"memo/v1/{payload.device_id}/telemetry":
         raise ValueError("topic does not match payload device_id")
     return payload
 

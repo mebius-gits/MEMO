@@ -884,7 +884,7 @@
         "mqtt-publish"
       ]
     ],
-    "func": "const device = env.get('MEMO_DEVICE_ID') || 'room01';\nconst sequence = (flow.get('memo_mqtt_sequence') || 0) + 1;\nflow.set('memo_mqtt_sequence', sequence);\nmsg.topic = 'buddy/v1/' + device + '/telemetry';\nmsg.payload = {schema_version:1, message_id:device + '-' + Date.now() + '-' + msg._msgid,\n  device_id:device, observed_at:new Date().toISOString(), sequence:sequence,\n  metrics:{temperature_c:25.5, humidity_pct:60, co2_ppm:800}, quality:'ok'};\nreturn msg;",
+    "func": "const device = env.get('MEMO_DEVICE_ID') || 'room01';\nconst sequence = (flow.get('memo_mqtt_sequence') || 0) + 1;\nflow.set('memo_mqtt_sequence', sequence);\nmsg.topic = 'memo/v1/' + device + '/telemetry';\nmsg.payload = {schema_version:1, message_id:device + '-' + Date.now() + '-' + msg._msgid,\n  device_id:device, observed_at:new Date().toISOString(), sequence:sequence,\n  metrics:{temperature_c:25.5, humidity_pct:60, co2_ppm:800}, quality:'ok'};\nreturn msg;",
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,
