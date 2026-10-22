@@ -34,6 +34,25 @@ def test_hold_hysteresis_gap_and_recovery():
     assert state["status"] == "resolved" and notice == "resolved"
 
 
+def test_humidity_alerts_both_too_humid_and_too_dry():
+    rules = {rule.id: rule for rule in RULES}
+
+    def run(rule, values):
+        state, notices = {}, []
+        for t, value in enumerate(values):
+            state, notice = advance(rule, state, t * 5, value, True)
+            notices += [notice] if notice else []
+        return notices
+
+    comfortable = [55] * 40
+    assert run(rules["humidity_high"], comfortable) == []
+    assert run(rules["humidity_low"], comfortable) == []
+    # Dry air holds for 180 s, then must stay above 40 % for 180 s to recover.
+    assert run(rules["humidity_low"], [30] * 40 + [38] * 40) == ["active"]
+    assert run(rules["humidity_low"], [30] * 40 + [45] * 40) == ["active", "resolved"]
+    assert run(rules["humidity_high"], [72] * 40 + [60] * 40) == ["active", "resolved"]
+
+
 def test_invalid_missing_and_old_samples_never_resolve():
     rule = replace(RULES[0], hold=0)
     state, notice = advance(rule, {}, 0, 1400, True)

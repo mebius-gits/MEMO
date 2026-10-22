@@ -1,4 +1,4 @@
-"""Pure, event-time rules. Values are demonstration parameters, not safety standards."""
+"""Pure, event-time rules. Thresholds follow indoor-comfort guidance; not safety standards."""
 
 from dataclasses import dataclass
 from uuid import uuid4
@@ -14,14 +14,19 @@ class Rule:
     recover_hold: float
     window: float = 0
     max_gap: float = 15
+    # "below" rules fire when the value drops under trigger and recover above recovery.
+    direction: str = "above"
 
 
 RULES = (
     Rule("co2_high", "co2_ppm", 1200, 1000, 120, 120),
     Rule("temperature_high", "temperature_c", 30, 28, 60, 120),
-    Rule("humidity_high", "humidity_pct", 75, 70, 180, 180),
+    # Comfortable indoor humidity is roughly 40-60 %: above 70 % favours mould and mites,
+    # below 35 % (humidity_low) dries skin and airways.
+    Rule("humidity_high", "humidity_pct", 70, 65, 180, 180),
     Rule("co2_rising", "co2_ppm", 300, 100, 10, 30, window=60),
     Rule("temperature_rising", "temperature_c", 2, 1, 10, 120, window=300),
+    Rule("humidity_low", "humidity_pct", 35, 40, 180, 180, direction="below"),
 )
 
 
@@ -60,8 +65,12 @@ def advance(
             return state, None
         score = value - samples[0][1]
     state["score"] = score
-    high = score > rule.trigger if not rule.window else score >= rule.trigger
-    low = score < rule.recovery
+    if rule.window:
+        high, low = score >= rule.trigger, score < rule.recovery
+    elif rule.direction == "below":
+        high, low = score < rule.trigger, score > rule.recovery
+    else:
+        high, low = score > rule.trigger, score < rule.recovery
     notice = None
     if not live:
         if high:
@@ -92,6 +101,7 @@ def event_words(rule_id: str, status: str, tone: str = "gentle") -> str:
         "temperature_high": "這裡偏暖已經一陣子了",
         "temperature_rising": "這裡最近暖起來得有點快",
         "humidity_high": "這裡的濕度偏高了一陣子",
+        "humidity_low": "這裡的空氣偏乾了一陣子",
     }[rule_id]
     if status == "resolved":
         recovered = {
@@ -99,7 +109,8 @@ def event_words(rule_id: str, status: str, tone: str = "gentle") -> str:
             "co2_rising": "二氧化碳剛才快速上升的趨勢已經緩下來了",
             "temperature_high": "溫度已回到設定範圍，並穩定了一陣子",
             "temperature_rising": "剛才快速升溫的趨勢已經緩下來了",
-            "humidity_high": "濕度已回到設定範圍，並穩定了一陣子",
+            "humidity_high": "濕度已回到舒適範圍，並穩定了一陣子",
+            "humidity_low": "濕度已回到舒適範圍，並穩定了一陣子",
         }[rule_id]
         return {
             "gentle": f"{recovered}。我會繼續陪你留意其他變化。",

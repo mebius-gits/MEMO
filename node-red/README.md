@@ -38,7 +38,7 @@ API 容器會自動執行 Alembic migration，通過健康檢查後才啟動 Nod
 | --- | --- | --- |
 | CO₂ 提高 +700 ppm | `{"metric":"co2_ppm","delta":700}` | co2_rising、co2_high（> 1200 ppm） |
 | 溫度提高 +6°C | `{"metric":"temperature_c","delta":6}` | temperature_rising、temperature_high（> 30°C） |
-| 濕度提高 +20% | `{"metric":"humidity_pct","delta":20}` | humidity_high（> 75%） |
+| 濕度提高 +20% | `{"metric":"humidity_pct","delta":20}` | humidity_high（> 70%）；網頁可設負值測 humidity_low（< 35%） |
 | 恢復正常 | `{"reset":true}` | 清除全部偏移，等待恢復確認 |
 
 每按一次就再疊加一次偏移；偏移會在數筆資料內逐步升高或回落，不會瞬間跳動。雙擊按鈕可修改 `delta`，負數代表降低。暫停傳送期間設定的異常值會在恢復後生效；按鈕設定會顯示在 Debug 的「異常值狀態」。
