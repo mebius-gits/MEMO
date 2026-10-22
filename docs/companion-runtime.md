@@ -72,4 +72,4 @@ uv run python -m memo.workers.simulator --device-id memo-co2-scene --scenario co
 
 或先啟動 Compose，再執行 `docker compose run --rm simulator python -m memo.workers.simulator --api-url http://api:8000 --device-id memo-co2-scene --scenario co2-rise-recover --count 73`。
 
-瀏覽器測試：`node tests/browser.mjs`；完整六分鐘流程：`node tests/scenario.mjs`（在 memo_demo 目錄，預設 API 8100）。分頁背景節流或連線中斷會中斷連續樣本，因此劇本結束不保證已確認恢復，應以 `/events` 和任務結果為準。
+瀏覽器測試：`node tests/browser.mjs`（在 memo_demo 目錄）。CO₂ 情境請使用上方的 simulator 指令，恢復狀態以 `/events` 和任務結果為準。

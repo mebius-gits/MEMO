@@ -3,51 +3,76 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#f6f5ef" />
+    <meta name="theme-color" content="#ffffff" />
     <meta name="description" content="和 MEMO 坐一會，感受你的空間。3D 環境感知小夥伴。" />
     <title>MEMO · 陪你感受每一刻</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   </head>
   <body>
-    <header class="topbar">
-      <a class="brand" href="/" aria-label="MEMO 首頁"><span class="brand-icon">m<span>·</span></span><b>MEMO</b><span class="brand-caption">a little company.</span></a>
-      <nav aria-label="操作"><span class="connection"><i id="connection-dot"></i><span id="connection-label">尚未連接後端</span></span><button id="settings-button" class="icon-button" aria-label="連線設定" title="連線設定"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 17h16M8 4v6m8 4v6"/></svg></button></nav>
-    </header>
-    <main>
-      <section class="companion" aria-label="MEMO 3D 陪伴空間">
-        <div class="scene-heading"><p class="eyebrow"><span></span> YOUR EVERYDAY COMPANION</p><h1>好好待著，<br>就很好。</h1><p class="intro">你的空間，我陪你一起感受。</p></div>
+    <main class="app">
+      <section class="stage" aria-label="MEMO 3D 陪伴空間">
         <div id="scene" role="img" aria-label="薄荷綠掌機造型的 MEMO 坐著，輕輕呼吸與眨眼"></div>
         <div id="webgl-fallback" hidden><p>這個瀏覽器目前無法顯示 3D。</p><p>請啟用硬體加速，或使用新版 Chrome／Edge。<br>環境資料與對話仍可使用。</p></div>
-        <div class="scene-tag"><i></i><span>MEMO 的小角落</span><span class="tag-line"></span><span id="scene-period">DAYLIGHT</span></div>
-        <div class="mood-chip"><span id="mood-face">◡</span><div><small>此刻的 MEMO</small><b id="mood-label">安靜陪伴</b></div><span class="mood-dot"></span></div>
-        <div class="scene-footer"><span>拖曳轉個角度，和我打聲招呼。</span><div><button id="pause-motion" class="icon-button" aria-label="暫停動態" title="暫停動態">Ⅱ</button><button id="reset-camera" class="icon-button" aria-label="重設視角" title="重設視角">↺</button></div></div>
+        <div class="mood" aria-live="polite"><span id="mood-face" aria-hidden="true">◡</span><b id="mood-label">安靜陪伴</b></div>
+        <div class="stage-tools"><button id="pause-motion" class="icon-button" aria-label="暫停動態" title="暫停動態"></button><button id="reset-camera" class="icon-button" aria-label="重設視角" title="重設視角"></button></div>
       </section>
-      <aside class="sidebar">
-        <section class="environment panel" aria-labelledby="environment-title">
-          <div class="section-heading"><div><p class="eyebrow">YOUR SPACE</p><h2 id="environment-title">空間的此刻</h2></div><span class="tiny-label" id="freshness">等待資料</span></div>
-          <div class="device-row"><span class="device-symbol">⌂</span><label class="sr-only" for="device">選擇感測裝置</label><select id="device"><option value="">尚未連接裝置</option></select><button id="refresh-data" class="plain-button" aria-label="重新整理資料">↻</button></div>
-          <div class="metric" data-metric="temperature_c"><div class="metric-icon warm"><svg viewBox="0 0 24 24"><path d="M9 14.5V5a3 3 0 0 1 6 0v9.5a5 5 0 1 1-6 0Z"/><path d="M12 9v9"/></svg></div><div class="metric-name"><span>溫度</span><small>Temperature</small></div><svg class="sparkline" viewBox="0 0 100 32" aria-hidden="true"></svg><div class="metric-number"><b id="temperature-value">—</b><span>°C</span></div></div>
-          <div class="metric" data-metric="humidity_pct"><div class="metric-icon cool"><svg viewBox="0 0 24 24"><path d="M12 3S5 11 5 15a7 7 0 0 0 14 0c0-4-7-12-7-12Z"/></svg></div><div class="metric-name"><span>濕度</span><small>Humidity</small></div><svg class="sparkline" viewBox="0 0 100 32" aria-hidden="true"></svg><div class="metric-number"><b id="humidity-value">—</b><span>%</span></div></div>
-          <div class="metric" data-metric="co2_ppm"><div class="metric-icon sage"><svg viewBox="0 0 24 24"><path d="M3 8h12a3 3 0 1 0-3-3M3 12h16M3 16h9a3 3 0 1 1-3 3"/></svg></div><div class="metric-name"><span>二氧化碳</span><small>Carbon dioxide</small></div><svg class="sparkline" viewBox="0 0 100 32" aria-hidden="true"></svg><div class="metric-number"><b id="co2-value">—</b><span>ppm</span></div></div>
-          <p class="data-note" id="data-note">連接你的後端，看看空間裡的小變化。</p>
+
+      <aside class="bar" aria-label="MEMO 控制列">
+        <header class="bar-head">
+          <a class="brand" href="/" aria-label="MEMO 首頁"><svg viewBox="-6 -6 192 222" aria-hidden="true"><rect width="180" height="206" rx="22" fill="#69CDB4" stroke="#1F6B5B" stroke-width="10"/><rect x="18" y="18" width="144" height="104" rx="10" fill="#C4F0DB" stroke="#1F6B5B" stroke-width="8"/><circle cx="66" cy="64" r="10" fill="#12332C"/><circle cx="114" cy="64" r="10" fill="#12332C"/><path d="M68 88 Q90 106 112 88" fill="none" stroke="#12332C" stroke-width="8" stroke-linecap="round"/></svg>MEMO</a>
+          <span class="connection"><i id="connection-dot"></i><span id="connection-label">尚未連接後端</span></span>
+        </header>
+
+        <section class="readings" aria-label="空間的此刻">
+          <div class="metric" data-metric="temperature_c"><span class="metric-name"><i data-icon="thermo"></i>溫度</span><div class="metric-number"><b id="temperature-value">—</b><span>°C</span></div><svg class="sparkline" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true"></svg></div>
+          <div class="metric" data-metric="humidity_pct"><span class="metric-name"><i data-icon="drop"></i>濕度</span><div class="metric-number"><b id="humidity-value">—</b><span>%</span></div><svg class="sparkline" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true"></svg></div>
+          <div class="metric" data-metric="co2_ppm"><span class="metric-name"><i data-icon="wind"></i>CO₂</span><div class="metric-number"><b id="co2-value">—</b><span>ppm</span></div><svg class="sparkline" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true"></svg></div>
         </section>
-        <section class="conversation panel" aria-labelledby="conversation-title">
-          <div class="section-heading"><div><p class="eyebrow">A MOMENT WITH MEMO</p><h2 id="conversation-title">坐下來，聊一會</h2></div><label class="tone-picker"><span class="sr-only">MEMO 語氣</span><select id="tone"><option value="gentle">溫柔 ◡</option><option value="lively">活潑 ✧</option><option value="concise">簡潔 ·</option></select></label></div>
-          <div id="messages" class="messages" role="log" aria-live="polite"><div class="message memo"><span class="avatar">m</span><div><p>嗨，我是 MEMO。<br>我就在這裡，陪你看看今天的空間。</p><small>招呼語 · 尚未讀取環境</small></div></div></div>
-          <button id="ask-summary" class="suggestion">現在的環境如何？ <span>↗</span></button>
-          <form id="chat-form"><label class="sr-only" for="chat-input">想對 MEMO 說什麼？</label><input id="chat-input" placeholder="想對 MEMO 說什麼？" maxlength="2000" autocomplete="off" required /><button id="send-message" type="submit" aria-label="傳送訊息">↑</button></form>
-          <p class="conversation-note">我會記住這段對話，也會主動告訴你空間的變化。</p>
-        </section>
+
+        <div class="tabbar">
+          <div class="tabs" role="tablist" aria-label="控制列分頁">
+            <button id="tab-chat" role="tab" aria-selected="true" aria-controls="panel-chat"><i data-icon="chat"></i>對話<span class="badge-dot" id="chat-badge" hidden></span></button>
+            <button id="tab-params" role="tab" aria-selected="false" aria-controls="panel-params" tabindex="-1"><i data-icon="sliders"></i>參數</button>
+          </div>
+          <span id="freshness" class="fresh">等待資料</span>
+        </div>
+
+        <div id="panel-chat" class="panel" role="tabpanel" aria-labelledby="tab-chat">
+          <div id="messages" class="messages" role="log" aria-live="polite"></div>
+        </div>
+
+        <div id="panel-params" class="panel params" role="tabpanel" aria-labelledby="tab-params" hidden>
+          <section class="group">
+            <h3>感測裝置</h3>
+            <div class="device-row"><label class="sr-only" for="device">選擇感測裝置</label><select id="device"><option value="">尚未連接裝置</option></select><button id="refresh-data" class="icon-button" aria-label="重新整理資料" title="重新整理資料"></button></div>
+          </section>
+          <section class="group">
+            <h3>MEMO 語氣</h3>
+            <div class="seg" role="radiogroup" aria-label="MEMO 語氣">
+              <label><input type="radio" name="tone" value="gentle" checked /><span>溫柔</span></label>
+              <label><input type="radio" name="tone" value="lively" /><span>活潑</span></label>
+              <label><input type="radio" name="tone" value="concise" /><span>簡潔</span></label>
+            </div>
+          </section>
+          <section class="group">
+            <h3>模擬讀值</h3>
+            <div class="sliders">
+              <label><span>溫度</span><output id="sim-temperature-output">26 °C</output><input id="sim-temperature" type="range" min="10" max="40" step="0.5" value="26" /></label>
+              <label><span>濕度</span><output id="sim-humidity-output">60 %</output><input id="sim-humidity" type="range" min="10" max="95" value="60" /></label>
+              <label><span>CO₂</span><output id="sim-co2-output">800 ppm</output><input id="sim-co2" type="range" min="400" max="2500" step="50" value="800" /></label>
+            </div>
+            <button id="publish-simulation" class="btn primary wide">送出模擬讀值</button>
+          </section>
+        </div>
+
+        <footer class="composer">
+          <div class="chips"><button id="ask-summary" class="chip" data-prompt="MEMO，現在的環境如何？">現在的環境如何？</button><button class="chip" data-prompt="現在數值多少？">現在數值多少？</button></div>
+          <form id="chat-form"><label class="sr-only" for="chat-input">想對 MEMO 說什麼？</label><input id="chat-input" placeholder="想對 MEMO 說什麼？" maxlength="2000" autocomplete="off" required /><button id="send-message" type="submit" class="send" aria-label="傳送訊息"></button></form>
+        </footer>
       </aside>
-      <section class="simulation" aria-label="環境模擬工具">
-        <button id="simulation-toggle" aria-expanded="false" aria-controls="simulation-body"><span class="simulation-icon">⏣</span><span><b>試著改變小環境</b><small>寫入獨立的模擬裝置，看看 MEMO 的回應。</small></span><span class="simulation-label">SIMULATION</span><span id="simulation-arrow">＋</span></button>
-        <div id="simulation-body" hidden><div class="sliders"><label>溫度 <output id="sim-temperature-output">26 °C</output><input id="sim-temperature" type="range" min="10" max="40" step="0.5" value="26" /></label><label>濕度 <output id="sim-humidity-output">60 %</output><input id="sim-humidity" type="range" min="10" max="95" value="60" /></label><label>CO₂ <output id="sim-co2-output">800 ppm</output><input id="sim-co2" type="range" min="400" max="2500" step="50" value="800" /></label></div><div class="simulation-actions"><p>僅寫入 <code>memo-web-demo</code>，不覆寫實體裝置資料。<br>感測值不直接決定情緒或告警。</p><button id="publish-simulation" class="primary-button">送出模擬讀值 ↗</button></div></div>
-      </section>
-      <section class="simulation scenario" aria-label="CO₂ 情境劇本"><div class="simulation-actions" style="padding:20px 24px;margin:0"><div><b>陪 MEMO 看一次空間的變化</b><p>約 6 分鐘：平穩 → CO₂ 升高 → 主動提醒 → 回穩。<br>使用獨立模擬裝置；請保持分頁開啟。中斷或背景節流會延後確認。</p><small id="scenario-status" role="status">準備好，就一起開始。</small></div><button id="start-scenario" class="primary-button">開始 CO₂ 劇本</button><button id="stop-scenario" class="secondary-button" disabled>停止</button></div></section>
     </main>
-    <footer><span>MEMO <i>·</i> Little moments, better together.</span><span>一個小夥伴，一點點安心。</span></footer>
+
     <div id="toast" role="status" hidden></div>
-    <dialog id="settings-dialog"><form id="settings-form"><div class="dialog-heading"><div><p class="eyebrow">MAKE A CONNECTION</p><h2>連接你的 MEMO</h2></div><button type="button" id="close-settings" class="icon-button" aria-label="關閉設定">×</button></div><p>將網站連到你的 FastAPI 後端，取得環境讀值與 MEMO 回覆。</p><label for="api-url">後端網址</label><input id="api-url" type="url" placeholder="https://your-memo-api.example.com" autocomplete="off" /><small>只填來源網址，不含 /api/v1。設定僅保存在這個瀏覽器。</small><div class="connection-help">發布網站請使用可公開連線的 HTTPS 後端，並將本網站來源加入後端 CORS 設定。localhost 只適用於你目前這台電腦。</div><p id="settings-error" class="error-text" role="alert"></p><div class="dialog-actions"><button type="button" id="disconnect" class="secondary-button">中斷連線</button><button type="submit" class="primary-button" id="connect-button">測試並連接 ↗</button></div></form></dialog>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

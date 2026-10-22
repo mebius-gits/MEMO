@@ -2,30 +2,59 @@ import './style.css';
 import { createMemoScene } from './scene.js';
 
 const $ = selector => document.querySelector(selector);
+const ICONS = {
+  thermo: '<path d="M10 14.5V5a2 2 0 0 1 4 0v9.5a4 4 0 1 1-4 0z"/>',
+  drop: '<path d="M12 3c3 4 6 7 6 10.5a6 6 0 0 1-12 0C6 10 9 7 12 3z"/>',
+  wind: '<path d="M3 9h11a3 3 0 1 0-3-3M3 14h15a3 3 0 1 1-3 3M3 19h7"/>',
+  chat: '<path d="M4 5h16v11H9l-5 4z"/>',
+  sliders: '<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>',
+  refresh: '<path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/>',
+  replay: '<path d="M4 12a8 8 0 1 0 3-6.2M4 4v5h5"/>',
+  pause: '<path d="M9 5v14M15 5v14"/>',
+  play: '<path d="M7 4l13 8-13 8z"/>',
+  send: '<path d="M12 19V5M5 12l7-7 7 7"/>',
+};
+const icon = name => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]}</svg>`;
+const AVATAR = '<svg viewBox="-6 -6 192 222" aria-hidden="true"><rect width="180" height="206" rx="22" fill="#69CDB4" stroke="#0F2F2A" stroke-width="10"/><rect x="18" y="18" width="144" height="104" rx="10" fill="#C4F0DB" stroke="#0F2F2A" stroke-width="8"/><circle cx="66" cy="64" r="10" fill="#12332C"/><circle cx="114" cy="64" r="10" fill="#12332C"/><path d="M68 88 Q90 106 112 88" fill="none" stroke="#12332C" stroke-width="8" stroke-linecap="round"/><rect x="40" y="150" width="34" height="12" rx="4" fill="#F4D03F"/><circle cx="140" cy="158" r="12" fill="#E4574E"/></svg>';
+for (const el of document.querySelectorAll('[data-icon]')) el.innerHTML = icon(el.dataset.icon);
+for (const [id, name] of [['refresh-data', 'refresh'], ['reset-camera', 'replay'], ['pause-motion', 'pause'], ['send-message', 'send']]) $(`#${id}`).innerHTML = icon(name);
 const storage = { get(key) { try { return localStorage.getItem(key); } catch { return null; } }, set(key, value) { try { localStorage.setItem(key, value); } catch { /* Private browsers may block storage. */ } } };
-const defaultApiBase = (import.meta.env.VITE_API_URL || '').trim();
-let apiBase = storage.get('memo.apiBase') ?? defaultApiBase, activeDevice = '', readings = [], devices = [];
+// Backend origin comes only from VITE_API_URL (read when Vite starts or builds).
+let apiBase = (import.meta.env.VITE_API_URL || '').trim(), activeDevice = '', readings = [], devices = [];
 let refreshing = false, chatting = false, generation = 0, toastTimer, connected = false;
 const sessionId = storage.get('memo.sessionId') || crypto.randomUUID();
 storage.set('memo.sessionId', sessionId);
-let conversationScope = '', scenarioTimer, scenarioRunning = false;
+let conversationScope = '';
 const seenNotifications = new Set();
 let companion;
 try { companion = createMemoScene($('#scene')); } catch (error) { $('#webgl-fallback').hidden = false; console.warn('3D unavailable', error.message); }
-if (companion?.paused) { $('#pause-motion').textContent = '▷'; $('#pause-motion').setAttribute('aria-label', '恢復動態'); }
+if (import.meta.env.DEV) window.memoScene = companion;
+function motionButton(paused) { const label = paused ? '恢復動態' : '暫停動態'; $('#pause-motion').innerHTML = icon(paused ? 'play' : 'pause'); $('#pause-motion').setAttribute('aria-label', label); $('#pause-motion').title = label; }
+if (companion?.paused) motionButton(true);
 $('#reset-camera').onclick = () => companion?.reset();
-$('#pause-motion').onclick = () => { const paused = companion?.toggleMotion(); $('#pause-motion').textContent = paused ? '▷' : 'Ⅱ'; $('#pause-motion').setAttribute('aria-label', paused ? '恢復動態' : '暫停動態'); };
+$('#pause-motion').onclick = () => motionButton(companion?.toggleMotion());
+
+function selectTab(name) {
+  for (const tab of ['chat', 'params']) {
+    const active = tab === name;
+    $(`#tab-${tab}`).setAttribute('aria-selected', String(active)); $(`#tab-${tab}`).tabIndex = active ? 0 : -1; $(`#panel-${tab}`).hidden = !active;
+  }
+  if (name === 'chat') { $('#chat-badge').hidden = true; $('#panel-chat').scrollTop = $('#panel-chat').scrollHeight; }
+}
+$('#tab-chat').onclick = () => selectTab('chat');
+$('#tab-params').onclick = () => selectTab('params');
+$('.tabs').onkeydown = event => { if (['ArrowLeft', 'ArrowRight'].includes(event.key)) { const next = $('#panel-chat').hidden ? 'chat' : 'params'; selectTab(next); $(`#tab-${next}`).focus(); } };
 
 function toast(message) { clearTimeout(toastTimer); $('#toast').textContent = message; $('#toast').hidden = false; toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 5500); }
 function connection(ok, label) { connected = ok; $('#connection-dot').classList.toggle('online', ok); $('#connection-label').textContent = label; }
 function normalizeUrl(value) {
   const url = new URL(value.trim());
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || url.pathname !== '/') throw new Error('請填完整的 HTTP(S) 來源網址，不包含路徑、帳密或查詢參數。');
-  if (location.protocol === 'https:' && url.protocol === 'http:') throw new Error('此網站使用 HTTPS，請使用 HTTPS 後端網址。');
+  if (location.protocol === 'https:' && url.protocol === 'http:') throw new Error('此網站使用 HTTPS，VITE_API_URL 須為 HTTPS。');
   return url.origin;
 }
 async function request(path, options = {}, base = apiBase) {
-  if (!base) throw new Error('請先連接你的 MEMO 後端。');
+  if (!base) throw new Error('尚未設定 VITE_API_URL。');
   let response;
   try { response = await fetch(`${base}${path}`, { ...options, signal: AbortSignal.timeout(path.endsWith('/interaction') ? 45000 : 12000), headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers } }); }
   catch { throw new Error('無法連接後端。請檢查網址、HTTPS、CORS 或網路連線。'); }
@@ -50,9 +79,9 @@ function drawSparkline(key) {
   if (valid.length < 2) return;
   const min = Math.min(...valid), span = Math.max(...valid) - min || 1;
   let path = '', drawing = false;
-  values.forEach((value, index) => { if (value === null) { drawing = false; return; } path += `${drawing ? 'L' : 'M'}${index / (values.length - 1) * 96 + 2},${26 - (value - min) / span * 18} `; drawing = true; });
+  values.forEach((value, index) => { if (value === null) { drawing = false; return; } path += `${drawing ? 'L' : 'M'}${index / (values.length - 1) * 100},${24 - (value - min) / span * 20} `; drawing = true; });
   const element = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  element.setAttribute('d', path); element.setAttribute('fill', 'none'); element.setAttribute('stroke', key === 'temperature_c' ? '#bcaa79' : key === 'humidity_pct' ? '#8da9b2' : '#9baa77'); element.setAttribute('stroke-width', '1.5'); svg.appendChild(element);
+  element.setAttribute('d', path); element.setAttribute('fill', 'none'); element.setAttribute('stroke', key === 'temperature_c' ? '#D9A400' : key === 'humidity_pct' ? '#3D86E0' : '#2F8F7B'); element.setAttribute('stroke-width', '2'); element.setAttribute('stroke-linejoin', 'round'); element.setAttribute('vector-effect', 'non-scaling-stroke'); svg.appendChild(element);
 }
 function renderReadings() {
   const latest = readings[0];
@@ -61,10 +90,6 @@ function renderReadings() {
   for (const [key, id] of [['temperature_c', 'temperature-value'], ['humidity_pct', 'humidity-value'], ['co2_ppm', 'co2-value']]) {
     const value = latest?.[key]; $(`#${id}`).textContent = value == null ? '—' : key === 'temperature_c' ? Number(value).toFixed(1) : Math.round(value).toLocaleString(); drawSparkline(key);
   }
-  if (latest) {
-    const time = new Date(latest.observed_at).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-    $('#data-note').textContent = `${activeDevice === 'memo-web-demo' ? '模擬裝置 · ' : ''}${fresh === '剛剛更新' ? '最近讀值' : '歷史讀值，非即時狀態'} · ${time}`;
-  } else $('#data-note').textContent = activeDevice ? '這個裝置還沒有讀值。資料到達後會自動更新。' : '連接你的後端，看看空間裡的小變化。';
 }
 async function refresh(showErrors = false) {
   if (!apiBase || refreshing) return;
@@ -83,60 +108,46 @@ async function refresh(showErrors = false) {
     if (currentGeneration !== generation || selected !== activeDevice) return;
     readings = resultReadings; connection(true, '已連接後端'); renderReadings();
     if (selected) await syncCompanion(selected, currentGeneration);
-  } catch (error) { if (currentGeneration !== generation) return; connection(false, '後端連線中斷'); $('#freshness').classList.remove('live'); $('#freshness').textContent = '連線中斷'; $('#data-note').textContent = '連線中斷，畫面保留最後一次讀值。'; if (showErrors) toast(error.message); }
+  } catch (error) { if (currentGeneration !== generation) return; connection(false, '後端連線中斷'); $('#freshness').classList.remove('live'); $('#freshness').textContent = '連線中斷'; if (showErrors) toast(error.message); }
   finally { refreshing = false; }
 }
 $('#device').onchange = () => { activeDevice = $('#device').value; generation++; readings = []; renderReadings(); refresh(true); };
-$('#refresh-data').onclick = () => apiBase ? refresh(true) : $('#settings-button').click();
-$('#settings-button').onclick = () => { $('#api-url').value = apiBase; $('#settings-error').textContent = ''; $('#settings-dialog').showModal(); };
-$('#close-settings').onclick = () => $('#settings-dialog').close();
-$('#settings-form').onsubmit = async event => {
-  event.preventDefault(); $('#settings-error').textContent = ''; $('#connect-button').disabled = true;
-  try {
-    const base = normalizeUrl($('#api-url').value);
-    const health = await request('/health/ready', {}, base);
-    if (health.status !== 'ready') throw new Error('後端尚未就緒。');
-    apiBase = base; generation++; activeDevice = ''; readings = []; storage.set('memo.apiBase', base);
-    $('#settings-dialog').close(); await refresh(true); toast('已保存連線設定。');
-  } catch (error) { $('#settings-error').textContent = error.message; }
-  finally { $('#connect-button').disabled = false; }
-};
-$('#disconnect').onclick = () => { apiBase = ''; activeDevice = ''; readings = []; generation++; storage.set('memo.apiBase', ''); connection(false, '尚未連接後端'); $('#device').replaceChildren(new Option('尚未連接裝置', '')); renderReadings(); $('#settings-dialog').close(); };
+$('#refresh-data').onclick = () => refresh(true);
+const missingApi = () => { if (!apiBase) toast('尚未設定 VITE_API_URL，請設定後重新啟動 Vite。'); return !apiBase; };
 
-function message(text, kind, caption = '') {
+function message(text, kind) {
   const row = document.createElement('div'); row.className = `message ${kind}`;
-  if (kind === 'memo') { const avatar = document.createElement('span'); avatar.className = 'avatar'; avatar.textContent = 'm'; row.appendChild(avatar); }
+  if (kind.startsWith('memo')) { const avatar = document.createElement('span'); avatar.className = 'avatar'; avatar.innerHTML = AVATAR; row.appendChild(avatar); }
   const content = document.createElement('div'), p = document.createElement('p'); p.textContent = text; content.appendChild(p);
-  if (caption) { const small = document.createElement('small'); small.textContent = caption; content.appendChild(small); }
-  row.appendChild(content); $('#messages').appendChild(row); $('#messages').scrollTop = $('#messages').scrollHeight;
+  row.appendChild(content); $('#messages').appendChild(row); $('#panel-chat').scrollTop = $('#panel-chat').scrollHeight;
+  if (kind === 'memo' && $('#panel-chat').hidden) $('#chat-badge').hidden = false;
   return row;
 }
 const moodLabels = { neutral: '安靜陪伴', friendly: '溫柔陪伴', happy: '開心', concerned: '有點關心', confused: '還想多了解' };
+const moodFaces = { neutral: '◡', friendly: '◡', happy: '▽', concerned: '︵', confused: '?' };
+const chips = () => document.querySelectorAll('.chip');
 async function chat(text) {
   if (chatting) return;
-  if (!apiBase) { $('#settings-button').click(); return; }
+  if (missingApi()) return;
   if (!activeDevice) { toast('請先選擇裝置，或送出一筆模擬讀值。'); return; }
   const selected = activeDevice, currentGeneration = generation;
-  chatting = true; $('#send-message').disabled = true; $('#ask-summary').disabled = true;
+  chatting = true; $('#send-message').disabled = true; chips().forEach(chip => { chip.disabled = true; });
   message(text, 'user'); $('#chat-input').value = '';
-  const waiting = message('讓我看看你空間裡的資料…', 'memo');
+  const waiting = message('讓我看看你空間裡的資料…', 'memo waiting');
   try {
-    const reply = await request(`/api/v1/devices/${encodeURIComponent(selected)}/interaction`, { method: 'POST', body: JSON.stringify({ session_id: sessionId, request_id: crypto.randomUUID(), user_message: text, personality: { tone: $('#tone').value } }) });
+    const reply = await request(`/api/v1/devices/${encodeURIComponent(selected)}/interaction`, { method: 'POST', body: JSON.stringify({ session_id: sessionId, request_id: crypto.randomUUID(), user_message: text, personality: { tone: $('input[name="tone"]:checked').value } }) });
     waiting.remove();
     if (generation !== currentGeneration) { message('裝置已切換，已略過上一個裝置的回覆。', 'memo'); return; }
-    message(reply.text, 'memo', `${reply.source === 'template' ? '模板回覆' : '模型回覆'} · 後端資料庫 · ${selected}`);
-    const label = moodLabels[reply.emotion.label] || moodLabels.neutral;
-    $('#mood-label').textContent = label; $('#mood-face').textContent = reply.emotion.label === 'confused' ? '?' : '◡';
-    companion?.setEmotion(reply.emotion.label, reply.emotion.intensity);
-  } catch (error) { waiting.remove(); message(error.message, 'memo', '未取得回覆'); }
-  finally { chatting = false; $('#send-message').disabled = false; $('#ask-summary').disabled = false; }
+    message(reply.text, 'memo');
+    showEmotion(reply.emotion);
+  } catch (error) { waiting.remove(); message(error.message, 'memo'); }
+  finally { chatting = false; $('#send-message').disabled = false; chips().forEach(chip => { chip.disabled = false; }); }
 }
-$('#chat-form').onsubmit = event => { event.preventDefault(); const text = $('#chat-input').value.trim(); if (text) chat(text); };
-$('#ask-summary').onclick = () => chat('MEMO，現在的環境如何？');
-$('#simulation-toggle').onclick = () => { const expanded = $('#simulation-body').hidden; $('#simulation-body').hidden = !expanded; $('#simulation-toggle').setAttribute('aria-expanded', String(expanded)); $('#simulation-arrow').textContent = expanded ? '−' : '＋'; };
+$('#chat-form').onsubmit = event => { event.preventDefault(); const text = $('#chat-input').value.trim(); if (text) { selectTab('chat'); chat(text); } };
+chips().forEach(chip => { chip.onclick = () => { selectTab('chat'); chat(chip.dataset.prompt); }; });
 for (const [name, unit] of [['temperature', '°C'], ['humidity', '%'], ['co2', 'ppm']]) $(`#sim-${name}`).oninput = e => { $(`#sim-${name}-output`).textContent = `${e.target.value} ${unit}`; };
 $('#publish-simulation').onclick = async () => {
-  if (!apiBase) { $('#settings-button').click(); return; }
+  if (missingApi()) return;
   const button = $('#publish-simulation'); button.disabled = true;
   const startGeneration = generation;
   try {
@@ -152,7 +163,7 @@ $('#publish-simulation').onclick = async () => {
 };
 function showEmotion(emotion) {
   $('#mood-label').textContent = moodLabels[emotion.label] || moodLabels.neutral;
-  $('#mood-face').textContent = emotion.label === 'confused' ? '?' : '?';
+  $('#mood-face').textContent = moodFaces[emotion.label] || moodFaces.neutral;
   companion?.setEmotion(emotion.label, emotion.intensity);
 }
 async function syncCompanion(device, currentGeneration) {
@@ -161,7 +172,7 @@ async function syncCompanion(device, currentGeneration) {
     const turns = await request(`/api/v1/devices/${encodeURIComponent(device)}/memory/conversation?session_id=${sessionId}`);
     if (generation !== currentGeneration || activeDevice !== device) return;
     $('#messages').replaceChildren();
-    for (const turn of turns) { message(turn.user_text, 'user'); message(turn.response.text, 'memo', '對話記憶'); }
+    for (const turn of turns) { message(turn.user_text, 'user'); message(turn.response.text, 'memo'); }
     if (!turns.length) message('我在這裡。空間有值得留意的變化時，我會輕輕告訴你。', 'memo');
     conversationScope = scope;
   }
@@ -169,47 +180,17 @@ async function syncCompanion(device, currentGeneration) {
   if (generation !== currentGeneration || activeDevice !== device) return;
   for (const task of tasks) {
     if (!seenNotifications.has(task.id)) {
-      message(task.response.text, 'memo', task.event_status === 'resolved' ? '主動回應 · 已恢復穩定' : '主動提醒');
+      message(task.response.text, 'memo');
       showEmotion(task.response.emotion); seenNotifications.add(task.id);
     }
     try { await request(`/api/v1/devices/${encodeURIComponent(device)}/notifications/ack`, { method: 'POST', body: JSON.stringify({ task_id: task.id }) }); }
     catch (error) { if (error.status !== 409) throw error; }
   }
 }
-function stopScenario(note = '劇本已停止；停止送資料不代表環境恢復。') {
-  clearTimeout(scenarioTimer); scenarioRunning = false;
-  $('#start-scenario').disabled = false; $('#stop-scenario').disabled = true;
-  $('#scenario-status').textContent = note;
-}
-$('#stop-scenario').onclick = () => stopScenario();
-$('#start-scenario').onclick = async () => {
-  if (!apiBase) { $('#settings-button').click(); return; }
-  if (scenarioRunning) return;
-  scenarioRunning = true; $('#start-scenario').disabled = true; $('#stop-scenario').disabled = false;
-  const base = apiBase, device = `memo-scene-${Date.now()}`, started = performance.now();
-  let sequence = 0;
-  try {
-    await request('/api/v1/devices', { method: 'POST', body: JSON.stringify({ id: device, name: 'MEMO CO₂ 情境', location: 'scenario' }) }, base);
-    if (!scenarioRunning || apiBase !== base) { stopScenario(); return; }
-    activeDevice = device; generation++; await refresh();
-    async function step() {
-      if (!scenarioRunning || apiBase !== base || activeDevice !== device) { stopScenario(); return; }
-      const elapsed = (performance.now() - started) / 1000;
-      const co2 = elapsed < 20 ? 800 : elapsed < 60 ? Math.round(800 + (elapsed - 20) * 15) : elapsed < 210 ? 1400 : 800;
-      $('#scenario-status').textContent = `${elapsed < 20 ? '先觀察平穩環境' : elapsed < 60 ? '空間正在發生變化' : elapsed < 210 ? '持續觀察，等待 MEMO 主動提醒' : '環境回穩中，等待恢復確認'} · ${Math.floor(elapsed)} / 360 秒`;
-      try {
-        await request('/api/v1/telemetry', { method: 'POST', body: JSON.stringify({ schema_version: 1, message_id: crypto.randomUUID(), device_id: device, observed_at: new Date().toISOString(), sequence: ++sequence, quality: 'ok', metrics: { temperature_c: 26, humidity_pct: 60, co2_ppm: co2 } }) }, base);
-        await refresh();
-        if (elapsed >= 360) { stopScenario('劇本完成：資料已送出，恢復狀態以 MEMO 的實際回應為準。'); return; }
-        if (scenarioRunning) scenarioTimer = setTimeout(step, 5000);
-      } catch (error) { stopScenario(error.message); }
-    }
-    await step();
-  } catch (error) { stopScenario(error.message); }
-};
+message('嗨，我是 MEMO。\n我就在這裡，陪你看看今天的空間。', 'memo');
 if (apiBase) {
   try { apiBase = normalizeUrl(apiBase); refresh(); }
-  catch (error) { apiBase = ''; toast(error.message); }
-}
+  catch (error) { apiBase = ''; connection(false, 'VITE_API_URL 無效'); toast(error.message); }
+} else connection(false, '未設定 VITE_API_URL');
 const interval = setInterval(() => { if (!document.hidden) refresh(); }, 5000);
-window.addEventListener('pagehide', () => { clearTimeout(scenarioTimer); scenarioRunning = false; clearInterval(interval); companion?.dispose(); });
+window.addEventListener('pagehide', () => { clearInterval(interval); companion?.dispose(); });
