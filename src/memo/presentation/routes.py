@@ -5,8 +5,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import AwareDatetime
 
 from memo.application.use_cases import EnvironmentService
-from memo.domain.entities import Device, Reading
+from memo.domain.entities import Device
 from memo.presentation.schemas import DeviceSchema, ReadingOutput, TelemetryInput
+from memo.presentation.telemetry import to_reading
 
 router = APIRouter(prefix="/api/v1")
 
@@ -38,17 +39,7 @@ def get_device(device_id: str, service: Service):
 
 @router.post("/telemetry", response_model=ReadingOutput, tags=["telemetry"])
 def ingest(payload: TelemetryInput, service: Service):
-    return service.ingest(
-        Reading(
-            message_id=payload.message_id,
-            device_id=payload.device_id,
-            observed_at=payload.observed_at,
-            received_at=datetime.now(timezone.utc),
-            sequence=payload.sequence,
-            quality=payload.quality,
-            **payload.metrics.model_dump(),
-        )
-    )
+    return service.ingest(to_reading(payload, datetime.now(timezone.utc)))
 
 
 @router.get("/devices/{device_id}/readings", response_model=list[ReadingOutput], tags=["telemetry"])

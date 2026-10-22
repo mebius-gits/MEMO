@@ -46,7 +46,11 @@ class ReadingRow(Base):
 
 
 def build_engine(url: str):
-    kwargs = {"connect_args": {"check_same_thread": False}} if url.startswith("sqlite") else {}
+    kwargs = (
+        {"connect_args": {"check_same_thread": False, "timeout": 10}}
+        if url.startswith("sqlite")
+        else {}
+    )
     engine = create_engine(url, pool_pre_ping=True, **kwargs)
     if engine.dialect.name == "sqlite":
 
