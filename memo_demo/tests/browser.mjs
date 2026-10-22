@@ -6,7 +6,8 @@ mkdirSync('test-results', { recursive: true });
 const browser = await chromium.launch({
   executablePath: process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe',
   headless: true,
-  args: ['--enable-unsafe-swiftshader'],
+  // Fake mic + autoplay so the voice round trip runs headless.
+  args: ['--enable-unsafe-swiftshader', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required'],
 });
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1100 }, deviceScaleFactor: 1 });
@@ -21,7 +22,6 @@ try {
   // Disturb Node-RED from the page, confirm it took effect there, then restore.
   const nodeRed = process.env.TEST_NODE_RED_URL || 'http://localhost:1880';
   const offsets = async () => (await (await fetch(`${nodeRed}/memo/disturbance`)).json()).anomaly_offset;
-  await page.locator('#tab-params').click();
   await page.waitForFunction(() => ['傳送中', '已暫停'].includes(document.querySelector('#node-red-toggle').textContent));
   await page.locator('#dist-co2_ppm').evaluate(input => { input.value = '700'; input.dispatchEvent(new Event('input')); });
   assert.equal(await page.locator('#dist-co2_ppm-output').textContent(), '+700 ppm');
@@ -36,11 +36,26 @@ try {
   assert.ok((await page.locator('#persona-text').inputValue()).startsWith('愛吐槽的損友'));
   await page.locator('#persona-text').fill('講話像老派管家，有禮但會碎念。');
   assert.equal(await page.locator('input[name="persona"]:checked').getAttribute('value'), 'custom');
-  await page.locator('#tab-chat').click();
   const chatRequest = page.waitForRequest(request => request.url().endsWith('/interaction'));
+  const spoken = page.waitForResponse(response => response.url().endsWith('/tts'), { timeout: 120000 });
   await page.locator('.chip').first().click();
   assert.deepEqual((await chatRequest).postDataJSON().personality, { tone: 'gentle', persona: '講話像老派管家，有禮但會碎念。' });
-  await page.waitForFunction(() => !document.querySelector('.message.waiting') && document.querySelectorAll('.message.memo').length >= 2, null, { timeout: 60000 });
+  // The reply appears in the speech bubble, quoting the question, placed on stage above BMO.
+  await page.waitForFunction(() => !document.querySelector('#bubble').classList.contains('waiting'), null, { timeout: 60000 });
+  assert.ok((await page.locator('#bubble-text').textContent()).trim().length > 0);
+  assert.equal(await page.locator('#bubble-quote').textContent(), 'MEMO，現在的環境如何？');
+  const [bubble, stage] = await Promise.all([page.locator('#bubble').boundingBox(), page.locator('.stage').boundingBox()]);
+  assert.ok(bubble.x >= stage.x && bubble.y >= stage.y && bubble.x + bubble.width <= stage.x + stage.width);
+  // Voice: the reply is read aloud through the speech service; the mic records, transcribes and replies.
+  const tts = await spoken;
+  assert.equal(tts.status(), 200);
+  assert.equal(tts.headers()['content-type'], 'audio/wav');
+  const heard = page.waitForResponse(response => response.url().endsWith('/stt'));
+  await page.locator('#mic').click();
+  await page.waitForFunction(() => document.querySelector('#mic').getAttribute('aria-pressed') === 'true');
+  await page.waitForTimeout(1500);
+  await page.locator('#mic').click();
+  assert.equal((await heard).status(), 200);
   await page.locator('#pause-motion').click();
   await page.screenshot({ path: 'test-results/desktop.png', fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -48,5 +63,5 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await page.screenshot({ path: 'test-results/mobile.png', fullPage: true });
   assert.deepEqual(errors, []);
-  console.log('PASS: 3D renderer, real backend connection, Node-RED disturbance and restore, persona settings, chat reply, mobile layout');
+  console.log('PASS: 3D renderer, real backend connection, Node-RED disturbance and restore, persona settings, chat reply, voice in/out, mobile layout');
 } finally { await browser.close(); }

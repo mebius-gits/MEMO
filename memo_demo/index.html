@@ -14,34 +14,29 @@
         <div id="scene" role="img" aria-label="薄荷綠掌機造型的 MEMO 坐著，輕輕呼吸與眨眼"></div>
         <div id="webgl-fallback" hidden><p>這個瀏覽器目前無法顯示 3D。</p><p>請啟用硬體加速，或使用新版 Chrome／Edge。<br>環境資料與對話仍可使用。</p></div>
         <div class="mood" aria-live="polite"><span id="mood-face" aria-hidden="true">◡</span><b id="mood-label">安靜陪伴</b></div>
-        <div class="stage-tools"><button id="pause-motion" class="icon-button" aria-label="暫停動態" title="暫停動態"></button><button id="reset-camera" class="icon-button" aria-label="重設視角" title="重設視角"></button></div>
+        <div class="stage-tools"><button id="pause-motion" class="icon-button" aria-label="暫停動態" title="暫停動態"></button><button id="reset-camera" class="icon-button" aria-label="重設視角" title="重設視角"></button><button id="voice-toggle" class="icon-button" aria-pressed="true"></button></div>
+        <div id="bubble" class="bubble" role="log" aria-live="polite" aria-label="MEMO 說的話"><small id="bubble-quote" hidden></small><p id="bubble-text"></p></div>
+        <footer class="stage-chat">
+          <div class="chips"><button class="chip" data-prompt="MEMO，現在的環境如何？">現在的環境如何？</button><button class="chip" data-prompt="現在數值多少？">現在數值多少？</button></div>
+          <form id="chat-form"><label class="sr-only" for="chat-input">想對 MEMO 說什麼？</label><input id="chat-input" placeholder="想對 MEMO 說什麼？" maxlength="2000" autocomplete="off" required /><button id="mic" type="button" class="mic"></button><button id="send-message" type="submit" class="send" aria-label="傳送訊息"></button></form>
+        </footer>
       </section>
 
-      <aside class="bar" aria-label="MEMO 控制列">
+      <aside class="bar" aria-label="環境監控與參數">
         <header class="bar-head">
           <a class="brand" href="/" aria-label="MEMO 首頁"><svg viewBox="-6 -6 192 222" aria-hidden="true"><rect width="180" height="206" rx="22" fill="#69CDB4" stroke="#1F6B5B" stroke-width="10"/><rect x="18" y="18" width="144" height="104" rx="10" fill="#C4F0DB" stroke="#1F6B5B" stroke-width="8"/><circle cx="66" cy="64" r="10" fill="#12332C"/><circle cx="114" cy="64" r="10" fill="#12332C"/><path d="M68 88 Q90 106 112 88" fill="none" stroke="#12332C" stroke-width="8" stroke-linecap="round"/></svg>MEMO</a>
           <span class="connection"><i id="connection-dot"></i><span id="connection-label">尚未連接後端</span></span>
         </header>
 
-        <section class="readings" aria-label="空間的此刻">
-          <div class="metric" data-metric="temperature_c"><span class="metric-name"><i data-icon="thermo"></i>溫度</span><div class="metric-number"><b id="temperature-value">—</b><span>°C</span></div><svg class="sparkline" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true"></svg></div>
-          <div class="metric" data-metric="humidity_pct"><span class="metric-name"><i data-icon="drop"></i>濕度</span><div class="metric-number"><b id="humidity-value">—</b><span>%</span></div><svg class="sparkline" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true"></svg></div>
-          <div class="metric" data-metric="co2_ppm"><span class="metric-name"><i data-icon="wind"></i>CO₂</span><div class="metric-number"><b id="co2-value">—</b><span>ppm</span></div><svg class="sparkline" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true"></svg></div>
-        </section>
-
-        <div class="tabbar">
-          <div class="tabs" role="tablist" aria-label="控制列分頁">
-            <button id="tab-chat" role="tab" aria-selected="true" aria-controls="panel-chat"><i data-icon="chat"></i>對話<span class="badge-dot" id="chat-badge" hidden></span></button>
-            <button id="tab-params" role="tab" aria-selected="false" aria-controls="panel-params" tabindex="-1"><i data-icon="sliders"></i>參數</button>
-          </div>
-          <span id="freshness" class="fresh">等待資料</span>
-        </div>
-
-        <div id="panel-chat" class="panel" role="tabpanel" aria-labelledby="tab-chat">
-          <div id="messages" class="messages" role="log" aria-live="polite"></div>
-        </div>
-
-        <div id="panel-params" class="panel params" role="tabpanel" aria-labelledby="tab-params" hidden>
+        <div class="panel">
+          <section class="monitor" aria-labelledby="monitor-title">
+            <h3 id="monitor-title">環境監控<span id="freshness" class="fresh">等待資料</span></h3>
+            <div class="readings">
+              <div class="metric" data-metric="temperature_c"><span class="metric-name"><i data-icon="thermo"></i>溫度</span><div class="metric-number"><b id="temperature-value">—</b><span>°C</span></div><svg class="sparkline" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true"></svg></div>
+              <div class="metric" data-metric="humidity_pct"><span class="metric-name"><i data-icon="drop"></i>濕度</span><div class="metric-number"><b id="humidity-value">—</b><span>%</span></div><svg class="sparkline" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true"></svg></div>
+              <div class="metric" data-metric="co2_ppm"><span class="metric-name"><i data-icon="wind"></i>CO₂</span><div class="metric-number"><b id="co2-value">—</b><span>ppm</span></div><svg class="sparkline" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true"></svg></div>
+            </div>
+          </section>
           <section class="group">
             <h3>人格設定</h3>
             <div class="seg personas" role="radiogroup" aria-label="人格設定">
@@ -64,11 +59,6 @@
             <div class="actions"><button id="apply-disturbance" class="btn primary" disabled>套用干擾</button><button id="reset-disturbance" class="btn" disabled>恢復正常</button></div>
           </section>
         </div>
-
-        <footer class="composer">
-          <div class="chips"><button id="ask-summary" class="chip" data-prompt="MEMO，現在的環境如何？">現在的環境如何？</button><button class="chip" data-prompt="現在數值多少？">現在數值多少？</button></div>
-          <form id="chat-form"><label class="sr-only" for="chat-input">想對 MEMO 說什麼？</label><input id="chat-input" placeholder="想對 MEMO 說什麼？" maxlength="2000" autocomplete="off" required /><button id="send-message" type="submit" class="send" aria-label="傳送訊息"></button></form>
-        </footer>
       </aside>
     </main>
 

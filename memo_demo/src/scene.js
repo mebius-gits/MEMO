@@ -15,7 +15,7 @@ export function createMemoScene(container) {
   container.appendChild(renderer.domElement);
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(32, 1, .1, 60);
-  const target = new THREE.Vector3(0, 1.1, .5);
+  const target = new THREE.Vector3(0, 1.45, .5);
   const home = new THREE.Vector3(-5.6, 2.8, 8.2);
   camera.position.copy(home);
   const controls = new OrbitControls(camera, renderer.domElement);
@@ -138,10 +138,11 @@ export function createMemoScene(container) {
   const shadow = mesh(new THREE.PlaneGeometry(3.9, 3.4), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(blob), transparent: true, depthWrite: false }), scene, 0, .002, .6);
   shadow.rotation.x = -Math.PI / 2;
 
-  let mood = 'neutral', intensity = .4, paused = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const headAnchor = new THREE.Vector3(W / 2 - .1, H + .3, FRONT);
+  let mood = 'neutral', intensity = .4, talking = false, paused = matchMedia('(prefers-reduced-motion: reduce)').matches;
   let lastFace = '', frameId;
-  function drawFace(blink) {
-    const faceKey = `${mood}-${blink}`;
+  function drawFace(blink, mouthOpen) {
+    const faceKey = `${mood}-${blink}-${mouthOpen}`;
     if (lastFace === faceKey) return;
     lastFace = faceKey;
     ctx.clearRect(0, 0, 1024, 726);
@@ -165,7 +166,10 @@ export function createMemoScene(container) {
       ctx.fillStyle = FACE;
     }
     ctx.beginPath(); ctx.lineWidth = 14;
-    if (mood === 'happy') {
+    if (mouthOpen) {
+      // Speaking: a small open mouth that flaps while audio plays.
+      ctx.ellipse(512, 455, 52, 34, 0, 0, Math.PI * 2); ctx.fillStyle = '#2E6B3C'; ctx.fill(); ctx.stroke();
+    } else if (mood === 'happy') {
       const mouth = new Path2D('M420 420 L604 420 C604 560 420 560 420 420 Z');
       ctx.fillStyle = '#2E6B3C'; ctx.fill(mouth);
       ctx.save(); ctx.clip(mouth); ctx.fillStyle = '#7CD06D'; ctx.beginPath(); ctx.ellipse(512, 535, 70, 46, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
@@ -186,7 +190,7 @@ export function createMemoScene(container) {
     body.scale.set(1 - breath * .006, 1 + breath * .008, 1);
     body.rotation.z = mood === 'confused' ? -.07 : Math.sin(elapsed * .7) * .008 * intensity;
     feet.forEach((foot, i) => { foot.rotation.x = paused ? 0 : Math.sin(elapsed * 2.2 + i * 1.4) * .12 * (mood === 'happy' ? 2 : 1); });
-    drawFace(!paused && elapsed % 5 > 4.82);
+    drawFace(!paused && elapsed % 5 > 4.82, talking && !paused && Math.floor(performance.now() / 140) % 2 === 1);
     controls.update(); renderer.render(scene, camera);
     frameId = requestAnimationFrame(animate);
   }
@@ -194,15 +198,25 @@ export function createMemoScene(container) {
     const { width, height } = container.getBoundingClientRect();
     if (!width || !height) return;
     renderer.setSize(width, height);
-    camera.aspect = width / height; camera.updateProjectionMatrix();
+    camera.aspect = width / height;
+    // Portrait stages (phones) zoom out so BMO and its speech bubble both fit.
+    camera.zoom = Math.min(1, camera.aspect / .9);
+    camera.updateProjectionMatrix();
   }); observer.observe(container);
   renderer.domElement.addEventListener('webglcontextlost', e => { e.preventDefault(); document.querySelector('#webgl-fallback').hidden = false; });
   frameId = requestAnimationFrame(animate);
   return {
     setEmotion(label, amount) { mood = label; intensity = amount; },
+    setTalking(value) { talking = value; },
     toggleMotion() { paused = !paused; return paused; },
     get paused() { return paused; },
     reset() { camera.position.copy(home); controls.target.copy(target); controls.update(); },
+    // Screen position (container pixels) just above the top-right corner of the head, for the speech bubble.
+    anchor() {
+      const { width, height } = container.getBoundingClientRect();
+      const point = headAnchor.clone().applyMatrix4(body.matrixWorld).project(camera);
+      return { x: (point.x + 1) / 2 * width, y: (1 - point.y) / 2 * height };
+    },
     dispose() { cancelAnimationFrame(frameId); observer.disconnect(); controls.dispose(); renderer.dispose(); }
   };
 }

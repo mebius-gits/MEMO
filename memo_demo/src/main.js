@@ -1,22 +1,23 @@
 import './style.css';
 import { createMemoScene } from './scene.js';
+import { createSpeech } from './speech.js';
 
 const $ = selector => document.querySelector(selector);
 const ICONS = {
   thermo: '<path d="M10 14.5V5a2 2 0 0 1 4 0v9.5a4 4 0 1 1-4 0z"/>',
   drop: '<path d="M12 3c3 4 6 7 6 10.5a6 6 0 0 1-12 0C6 10 9 7 12 3z"/>',
   wind: '<path d="M3 9h11a3 3 0 1 0-3-3M3 14h15a3 3 0 1 1-3 3M3 19h7"/>',
-  chat: '<path d="M4 5h16v11H9l-5 4z"/>',
-  sliders: '<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>',
   replay: '<path d="M4 12a8 8 0 1 0 3-6.2M4 4v5h5"/>',
   pause: '<path d="M9 5v14M15 5v14"/>',
   play: '<path d="M7 4l13 8-13 8z"/>',
   send: '<path d="M12 19V5M5 12l7-7 7 7"/>',
+  mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
+  speaker: '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/>',
+  mute: '<path d="M4 9v6h4l5 4V5L8 9zM17 9l4 6M21 9l-4 6"/>',
 };
 const icon = name => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]}</svg>`;
-const AVATAR = '<svg viewBox="-6 -6 192 222" aria-hidden="true"><rect width="180" height="206" rx="22" fill="#69CDB4" stroke="#0F2F2A" stroke-width="10"/><rect x="18" y="18" width="144" height="104" rx="10" fill="#C4F0DB" stroke="#0F2F2A" stroke-width="8"/><circle cx="66" cy="64" r="10" fill="#12332C"/><circle cx="114" cy="64" r="10" fill="#12332C"/><path d="M68 88 Q90 106 112 88" fill="none" stroke="#12332C" stroke-width="8" stroke-linecap="round"/><rect x="40" y="150" width="34" height="12" rx="4" fill="#F4D03F"/><circle cx="140" cy="158" r="12" fill="#E4574E"/></svg>';
 for (const el of document.querySelectorAll('[data-icon]')) el.innerHTML = icon(el.dataset.icon);
-for (const [id, name] of [['reset-camera', 'replay'], ['pause-motion', 'pause'], ['send-message', 'send']]) $(`#${id}`).innerHTML = icon(name);
+for (const [id, name] of [['reset-camera', 'replay'], ['pause-motion', 'pause'], ['send-message', 'send'], ['mic', 'mic']]) $(`#${id}`).innerHTML = icon(name);
 const storage = { get(key) { try { return localStorage.getItem(key); } catch { return null; } }, set(key, value) { try { localStorage.setItem(key, value); } catch { /* Private browsers may block storage. */ } } };
 // Backend origin comes only from VITE_API_URL (read when Vite starts or builds).
 // The page follows the device Node-RED is sending for; room01 until Node-RED reports otherwise.
@@ -34,16 +35,56 @@ if (companion?.paused) motionButton(true);
 $('#reset-camera').onclick = () => companion?.reset();
 $('#pause-motion').onclick = () => motionButton(companion?.toggleMotion());
 
-function selectTab(name) {
-  for (const tab of ['chat', 'params']) {
-    const active = tab === name;
-    $(`#tab-${tab}`).setAttribute('aria-selected', String(active)); $(`#tab-${tab}`).tabIndex = active ? 0 : -1; $(`#panel-${tab}`).hidden = !active;
-  }
-  if (name === 'chat') { $('#chat-badge').hidden = true; $('#panel-chat').scrollTop = $('#panel-chat').scrollHeight; }
+// Voice: replies and proactive notices are read aloud through the local speech service (VITE_SPEECH_URL).
+const speechBase = (import.meta.env.VITE_SPEECH_URL || '').trim().replace(/\/$/, '');
+let talkingNow = false;
+const speech = speechBase ? createSpeech(speechBase, value => { talkingNow = value; companion?.setTalking(value); }) : null;
+let voiceOn = storage.get('memo.voice') !== 'off';
+function voiceButton() {
+  const label = voiceOn ? '關閉語音朗讀' : '開啟語音朗讀';
+  $('#voice-toggle').innerHTML = icon(voiceOn ? 'speaker' : 'mute'); $('#voice-toggle').setAttribute('aria-pressed', String(voiceOn));
+  $('#voice-toggle').setAttribute('aria-label', label); $('#voice-toggle').title = label;
 }
-$('#tab-chat').onclick = () => selectTab('chat');
-$('#tab-params').onclick = () => selectTab('params');
-$('.tabs').onkeydown = event => { if (['ArrowLeft', 'ArrowRight'].includes(event.key)) { const next = $('#panel-chat').hidden ? 'chat' : 'params'; selectTab(next); $(`#tab-${next}`).focus(); } };
+$('#voice-toggle').onclick = () => { voiceOn = !voiceOn; storage.set('memo.voice', voiceOn ? 'on' : 'off'); if (!voiceOn) speech?.stop(); voiceButton(); };
+$('#voice-toggle').hidden = $('#mic').hidden = !speech;
+voiceButton();
+
+// Speech bubble pinned above BMO's head; follows the 3D anchor as the camera moves.
+const bubbleEl = $('#bubble'), bubbleState = { queue: [], shownAt: 0, timer: 0, x: NaN, y: NaN };
+function placeBubble() {
+  const stage = $('.stage').getBoundingClientRect(), point = companion?.anchor();
+  const x = point ? point.x : stage.width * .62, y = point ? point.y : stage.height * .3;
+  if (!(Math.abs(x - bubbleState.x) <= .5 && Math.abs(y - bubbleState.y) <= .5)) {
+    bubbleState.x = x; bubbleState.y = y;
+    const width = bubbleEl.offsetWidth;
+    // Keep the bubble on stage: shift left near the right edge, never above the top.
+    bubbleEl.style.left = `${Math.max(16, Math.min(x, stage.width - width - 16))}px`;
+    bubbleEl.style.bottom = `${Math.max(16, stage.height - y)}px`;
+    bubbleEl.style.maxHeight = `${Math.max(120, y - 16)}px`;
+  }
+  requestAnimationFrame(placeBubble);
+}
+function say(text, { quote = '', waiting = false, voice = false } = {}) {
+  // Anything new on screen interrupts what MEMO was saying; only replies and notices are spoken.
+  if (voice && voiceOn) speech?.speak(text); else speech?.stop();
+  $('#bubble-quote').textContent = quote; $('#bubble-quote').hidden = !quote;
+  $('#bubble-text').textContent = text;
+  bubbleEl.classList.toggle('waiting', waiting);
+  bubbleEl.classList.remove('pop'); void bubbleEl.offsetWidth; bubbleEl.classList.add('pop');
+  bubbleEl.scrollTop = 0; bubbleState.shownAt = performance.now(); bubbleState.x = NaN;
+}
+// Proactive notices queue so back-to-back ones each stay readable and never cut into a chat reply.
+function announce(text, emotion) { bubbleState.queue.push({ text, emotion }); drainBubble(); }
+function drainBubble() {
+  if (bubbleState.timer || !bubbleState.queue.length) return;
+  const wait = chatting || talkingNow ? 1500 : Math.max(0, bubbleState.shownAt + 6000 - performance.now());
+  bubbleState.timer = setTimeout(() => {
+    bubbleState.timer = 0;
+    if (!chatting && !talkingNow) { const next = bubbleState.queue.shift(); say(next.text, { voice: true }); showEmotion(next.emotion); }
+    drainBubble();
+  }, wait);
+}
+requestAnimationFrame(placeBubble);
 
 function toast(message) { clearTimeout(toastTimer); $('#toast').textContent = message; $('#toast').hidden = false; toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 5500); }
 function connection(ok, label) { connected = ok; $('#connection-dot').classList.toggle('online', ok); $('#connection-label').textContent = label; }
@@ -112,14 +153,6 @@ async function refresh(showErrors = false) {
 }
 const missingApi = () => { if (!apiBase) toast('尚未設定 VITE_API_URL，請設定後重新啟動 Vite。'); return !apiBase; };
 
-function message(text, kind) {
-  const row = document.createElement('div'); row.className = `message ${kind}`;
-  if (kind.startsWith('memo')) { const avatar = document.createElement('span'); avatar.className = 'avatar'; avatar.innerHTML = AVATAR; row.appendChild(avatar); }
-  const content = document.createElement('div'), p = document.createElement('p'); p.textContent = text; content.appendChild(p);
-  row.appendChild(content); $('#messages').appendChild(row); $('#panel-chat').scrollTop = $('#panel-chat').scrollHeight;
-  if (kind === 'memo' && $('#panel-chat').hidden) $('#chat-badge').hidden = false;
-  return row;
-}
 // Persona presets: tone drives the fallback templates; the description is what the model plays.
 const PERSONAS = {
   companion: { tone: 'gentle', text: '溫柔安靜的桌上小夥伴，說話輕柔，先關心你的感受。' },
@@ -146,19 +179,39 @@ async function chat(text) {
   if (missingApi()) return;
   const selected = activeDevice, currentGeneration = generation;
   chatting = true; $('#send-message').disabled = true; chips().forEach(chip => { chip.disabled = true; });
-  message(text, 'user'); $('#chat-input').value = '';
-  const waiting = message('讓我看看你空間裡的資料…', 'memo waiting');
+  $('#chat-input').value = '';
+  say('讓我想想…', { quote: text, waiting: true });
   try {
     const reply = await request(`/api/v1/devices/${encodeURIComponent(selected)}/interaction`, { method: 'POST', body: JSON.stringify({ session_id: sessionId, request_id: crypto.randomUUID(), user_message: text, personality: personality() }) });
-    waiting.remove();
-    if (generation !== currentGeneration) { message('裝置已切換，已略過上一個裝置的回覆。', 'memo'); return; }
-    message(reply.text, 'memo');
+    if (generation !== currentGeneration) { say('裝置已切換，已略過上一個裝置的回覆。'); return; }
+    say(reply.text, { quote: text, voice: true });
     showEmotion(reply.emotion);
-  } catch (error) { waiting.remove(); message(error.message, 'memo'); }
+  } catch (error) { say(error.message, { quote: text }); }
   finally { chatting = false; $('#send-message').disabled = false; chips().forEach(chip => { chip.disabled = false; }); }
 }
-$('#chat-form').onsubmit = event => { event.preventDefault(); const text = $('#chat-input').value.trim(); if (text) { selectTab('chat'); chat(text); } };
-chips().forEach(chip => { chip.onclick = () => { selectTab('chat'); chat(chip.dataset.prompt); }; });
+// Mic: click to start, click again (or wait 15 s) to stop; the transcript is sent as a chat message.
+let recording = null, recordTimer = 0;
+function micState(active) { const label = active ? '停止並送出' : '按一下開始說話'; $('#mic').setAttribute('aria-pressed', String(active)); $('#mic').setAttribute('aria-label', label); $('#mic').title = label; }
+micState(false);
+$('#mic').onclick = async () => {
+  if (chatting || !speech) return;
+  if (!recording) {
+    try { speech.stop(); recording = await speech.record(); }
+    catch { toast('無法使用麥克風，請允許瀏覽器存取麥克風。'); return; }
+    micState(true); recordTimer = setTimeout(() => { if (recording) $('#mic').click(); }, 15000);
+    return;
+  }
+  clearTimeout(recordTimer);
+  const current = recording; recording = null; micState(false); $('#mic').disabled = true;
+  try {
+    say('聽聽你說了什麼…', { waiting: true });
+    const { text } = await speech.transcribe(await current.stop());
+    if (text.trim()) chat(text.trim()); else say('我沒聽清楚，可以再說一次嗎？');
+  } catch (error) { say(error.message); }
+  finally { $('#mic').disabled = false; }
+};
+$('#chat-form').onsubmit = event => { event.preventDefault(); const text = $('#chat-input').value.trim(); if (text) chat(text); };
+chips().forEach(chip => { chip.onclick = () => chat(chip.dataset.prompt); });
 // Node-RED keeps sending drifting readings; this panel only adds or clears disturbance offsets there.
 const nodeRedBase = (import.meta.env.VITE_NODE_RED_URL || '').trim().replace(/\/$/, '');
 const offsetInputs = [...document.querySelectorAll('[data-offset]')];
@@ -209,23 +262,21 @@ async function syncCompanion(device, currentGeneration) {
   if (conversationScope !== scope) {
     const turns = await request(`/api/v1/devices/${encodeURIComponent(device)}/memory/conversation?session_id=${sessionId}`);
     if (generation !== currentGeneration || activeDevice !== device) return;
-    $('#messages').replaceChildren();
-    for (const turn of turns) { message(turn.user_text, 'user'); message(turn.response.text, 'memo'); }
-    if (!turns.length) message('我在這裡。空間有值得留意的變化時，我會輕輕告訴你。', 'memo');
+    const last = turns.at(-1);
+    if (!chatting) say(last ? last.response.text : '我在這裡。空間有值得留意的變化時，我會輕輕告訴你。', { quote: last?.user_text });
     conversationScope = scope;
   }
   const tasks = await request(`/api/v1/devices/${encodeURIComponent(device)}/notifications`);
   if (generation !== currentGeneration || activeDevice !== device) return;
   for (const task of tasks) {
     if (!seenNotifications.has(task.id)) {
-      message(task.response.text, 'memo');
-      showEmotion(task.response.emotion); seenNotifications.add(task.id);
+      announce(task.response.text, task.response.emotion); seenNotifications.add(task.id);
     }
     try { await request(`/api/v1/devices/${encodeURIComponent(device)}/notifications/ack`, { method: 'POST', body: JSON.stringify({ task_id: task.id }) }); }
     catch (error) { if (error.status !== 409) throw error; }
   }
 }
-message('嗨，我是 MEMO。\n我就在這裡，陪你看看今天的空間。', 'memo');
+say('嗨，我是 MEMO。\n我就在這裡，陪你看看今天的空間。');
 if (apiBase) {
   try { apiBase = normalizeUrl(apiBase); refresh(); }
   catch (error) { apiBase = ''; connection(false, 'VITE_API_URL 無效'); toast(error.message); }
