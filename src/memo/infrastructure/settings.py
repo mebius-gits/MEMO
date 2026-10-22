@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import AnyHttpUrl, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -14,6 +16,10 @@ class Settings(BaseSettings):
     openai_base_url: AnyHttpUrl = AnyHttpUrl("https://api.openai.com/v1")
     openai_model: str = ""
     openai_timeout_seconds: float = Field(default=30, gt=0, le=300)
+    # Optional OpenAI request parameters, sent only when set (some servers reject unknown ones).
+    # Low reasoning effort cuts gpt-oss latency several-fold for short spoken replies.
+    openai_reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = None
+    openai_max_completion_tokens: int | None = Field(default=None, ge=16, le=8192)
 
 
 class MqttSettings(BaseSettings):

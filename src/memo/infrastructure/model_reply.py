@@ -82,6 +82,10 @@ class ModelReplyGenerator:
             "response_format": {"type": "json_object"},
             "stream": False,
         }
+        if settings.openai_reasoning_effort:
+            payload["reasoning_effort"] = settings.openai_reasoning_effort
+        if settings.openai_max_completion_tokens:
+            payload["max_completion_tokens"] = settings.openai_max_completion_tokens
         headers = {"Content-Type": "application/json"}
         if settings.openai_api_key.get_secret_value():
             headers["Authorization"] = "Bearer " + settings.openai_api_key.get_secret_value()

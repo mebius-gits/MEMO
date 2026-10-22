@@ -60,6 +60,9 @@ def test_model_request_and_validated_output():
     assert reply.source == "model" and reply.fallback_reason is None
     assert captured["url"] == "http://model.local/v1/chat/completions"
     assert captured["authorization"] == "Bearer fake-test-key"
+    # Optional OpenAI parameters are omitted unless configured.
+    assert "reasoning_effort" not in captured["payload"]
+    assert "max_completion_tokens" not in captured["payload"]
     content = json.loads(captured["payload"]["messages"][1]["content"])
     assert content["task_memory"][0]["status"] == "acknowledged"
     assert content["history"][0]["content"] == "我叫小明"
@@ -128,3 +131,26 @@ def test_replies_are_kept_to_conversational_length():
     assert kept.endswith("。") and len(kept) <= 80 and kept.startswith("現在溫度 35 度")
     run_on = "這" * 120
     assert conversational(run_on) == "這" * 79 + "…"
+
+
+def test_optional_openai_parameters_are_sent_when_configured():
+    captured = {}
+
+    def opener(request, timeout):
+        captured.update(json.loads(request.data))
+        content = json.dumps({"text": "嗨", "emotion": {"label": "happy", "intensity": 0.5}})
+        return io.BytesIO(json.dumps({"choices": [{"message": {"content": content}}]}).encode())
+
+    settings = Settings(
+        openai_model="gpt-oss-120B",
+        openai_reasoning_effort="low",
+        openai_max_completion_tokens=400,
+        _env_file=None,
+    )
+    service = InteractionService(ModelReplyGenerator(settings, opener))
+    reply = service.respond(
+        service.prepare(InteractionInput("嗨", Personality()), datetime.now(timezone.utc))
+    )
+    assert reply.source == "model"
+    assert captured["reasoning_effort"] == "low"
+    assert captured["max_completion_tokens"] == 400
