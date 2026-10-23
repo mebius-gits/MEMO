@@ -14,7 +14,7 @@ RUN curl -fsSL https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-model
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY app.py smoke_test.py ./
+COPY app.py text.py smoke_test.py ./
 
 ENV SPEECH_THREADS=2 TTS_SPEAKER_ID=3 TTS_SPEED=1.3
 EXPOSE 8000

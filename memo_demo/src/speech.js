@@ -24,8 +24,20 @@ async function toWav(blob) {
   return encodeWav((await offline.startRendering()).getChannelData(0));
 }
 
-// Split into sentences so playback can start after the first one is synthesised.
-const sentences = text => (text.match(/[^。！？!?\n]+[。！？!?]*/g) || []).map(part => part.trim().slice(0, 500)).filter(Boolean);
+// Split into sentences so playback can start after the first one is synthesised. A short
+// sentence ("欸！") joins the next one: played alone it ends before the next is ready, and
+// MEMO would stall mid-reply. Pieces with nothing to say (～, ……, emoji) are dropped.
+const SHORT = 10;
+const speakable = /[\p{L}\p{N}]/u;
+function sentences(text) {
+  const parts = (text.match(/[^。！？!?\n]+[。！？!?]*/g) || []).map(part => part.trim()).filter(part => speakable.test(part));
+  const merged = [];
+  for (const part of parts) {
+    if (merged.length && merged.at(-1).length < SHORT) merged[merged.length - 1] += part;
+    else merged.push(part);
+  }
+  return merged.map(part => part.slice(0, 500));
+}
 
 export function createSpeech(base, onTalking = () => {}) {
   const audio = new Audio();

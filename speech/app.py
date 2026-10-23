@@ -3,7 +3,6 @@
 import io
 import json
 import os
-import re
 import threading
 import wave
 
@@ -14,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from opencc import OpenCC
 from pydantic import BaseModel, Field
+from text import speakable
 
 THREADS = int(os.getenv("SPEECH_THREADS", "2"))
 # Kokoro v1.1-zh speaker ids: 0-2 are English voices, Chinese voices start at 3 (zf_001).
@@ -48,8 +48,9 @@ tts = sherpa_onnx.OfflineTts(
         max_num_sentences=1,
     )
 )
-# SenseVoice writes Simplified Chinese; Kokoro's lexicon only knows Simplified characters.
-to_traditional, to_simplified = OpenCC("s2twp"), OpenCC("tw2sp")
+# SenseVoice writes Simplified Chinese; replies are shown in Taiwan Traditional.
+# (Text for Kokoro is normalised and converted to Simplified in text.speakable.)
+to_traditional = OpenCC("s2twp")
 # Each ONNX runtime is shared; serialise its calls rather than rely on undocumented thread
 # safety. Separate locks, so recognising the user never queues behind a long synthesis.
 stt_lock, tts_lock = threading.Lock(), threading.Lock()
@@ -103,18 +104,6 @@ def trim_silence(samples, rate: int, head: float = 0.05, tail: float = 0.12):
     start = max(0, voiced[0] - int(rate * head))
     end = min(len(samples), voiced[-1] + int(rate * tail))
     return samples[start:end]
-
-
-def speakable(text: str) -> str:
-    """Spell out units and symbols the Chinese front end would otherwise skip or misread."""
-    text = re.sub(r"CO\s*[₂2]", "二氧化碳", text, flags=re.IGNORECASE)
-    text = re.sub(r"(\d+(?:\.\d+)?)\s*°\s*C", r"\1度", text)
-    text = re.sub(r"(\d+(?:\.\d+)?)\s*[%％]", r"百分之\1", text)
-    text = re.sub(r"\s*ppm\b", " PPM", text, flags=re.IGNORECASE)
-    text = re.sub(r"\s*lux\b", "勒克斯", text, flags=re.IGNORECASE)
-    # Emoji and other symbols carry no speech.
-    text = re.sub(r"[^\w\s，。！？、；：,.!?;:\"'「」『』（）()~～\-]", "", text)
-    return to_simplified.convert(text).strip()
 
 
 @app.get("/health")
