@@ -1,6 +1,7 @@
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 import pytest
 from alembic import command
@@ -327,6 +328,10 @@ def test_device_policy_limits_proactive_notices(sessions):
     from memo.infrastructure.database import DeviceSettingRow
 
     start = datetime.now(timezone.utc) - timedelta(minutes=5)
+    # Quiet hours around the readings, whatever the time of day (a fixed 00:00-23:59 window
+    # left out the minute before midnight).
+    local = start.astimezone(ZoneInfo("Asia/Taipei"))
+    quiet = f"{local - timedelta(hours=1):%H:%M}-{local + timedelta(hours=1):%H:%M}"
     with sessions() as session:
         repo = SqlAlchemyRepository(session)
         repo.add_device(Device("room", "Room", ""))
@@ -334,7 +339,7 @@ def test_device_policy_limits_proactive_notices(sessions):
             DeviceSettingRow(
                 device_id="room",
                 personality={},
-                preferences={"quiet_hours": "00:00-23:59", "max_proactive_per_hour": None},
+                preferences={"quiet_hours": quiet, "max_proactive_per_hour": None},
                 updated_at=start,
             )
         )
