@@ -1,137 +1,207 @@
-# MEMO：FastAPI 雛形
+# MEMO：會感知環境的桌上小夥伴
 
-環境感知 AI 角色名稱為 **MEMO**。
+MEMO 是一個環境感知 AI 角色。它從感測器讀取溫度、濕度、CO₂ 與光照，用規則引擎判斷空間狀況，在需要時主動提醒；也能聊天、設定提醒、上網查資料、看圖片，並用語音說話與聆聽。網頁上有一個 3D 的 MEMO，旁邊放著一盞小檯燈。
 
-## Docker 一次啟動 API 與 Node-RED
+**核心原則**：規則引擎決定「該不該說、多嚴重」，模型只決定「怎麼說」。模型慢或失敗時，提醒照樣送出，改用模板文字。
 
-```powershell
-docker compose up -d --build
+## 功能
+
+| 類別 | 內容 |
+| --- | --- |
+| 環境感測 | 溫度、濕度、CO₂、光照（lux）；MQTT 或 HTTP 輸入，逐一驗證每個指標 |
+| 規則引擎 | 持續時間、遲滯、嚴重程度（注意／警戒／危險）、體感溫度、趨勢；沒有新資料也會發現感測中斷；門檻可線上修改 |
+| 主動提醒 | 升級、重複提醒、延後、勿擾時段、每小時上限；網頁沒開時，回來後用一兩句補說錯過的事 |
+| 對話 | 可設定人格；OpenAI 相容模型（實測 Gemma 4），失敗時用模板備援 |
+| 排程任務 | 用說的設定單次、定期、每日提醒，以及「我開窗了」之後的追蹤回報 |
+| 上網搜尋 | 自架 SearXNG，免費、免金鑰；回答附資料來源 |
+| 看圖片 | 上傳或貼上一張圖給 MEMO 看；圖片不保存 |
+| 語音 | 本機 SenseVoice 辨識、Kokoro 合成，只用 CPU |
+| 記憶 | 60 分鐘沒說話就算新的一次對話；舊對話自動壓縮成摘要；長期記得「關於你的事」（稱呼、喜好、正在做的作品） |
+| 網頁 | 3D MEMO 與表情、環境監控、檯燈、人格設定、環境干擾 |
+
+## 架構
+
+```mermaid
+flowchart LR
+    NR["Node-RED<br/>模擬感測"] -->|MQTT| BR["Mosquitto"] --> W["environment-worker<br/>規則引擎"]
+    W --> DB[("SQLite／PostgreSQL")]
+    API["API（FastAPI）<br/>對話・排程・派送・記憶壓縮"] <--> DB
+    API <--> LLM["OpenAI 相容模型"]
+    API --> SX["SearXNG"]
+    WEB["網頁（Vite + Three.js）"] <--> API
+    WEB <--> SP["speech<br/>STT／TTS"]
 ```
 
-開啟 http://localhost:1880，已預載完整範例節點；按「送出一筆模擬資料」即可自動註冊裝置、寫入讀值並查詢歷史。API 文件：http://localhost:8000/docs。需要 Docker Desktop（Linux containers）。詳見 [Node-RED 操作說明](node-red/README.md)。
+| 服務 | 網址 | 用途 |
+| --- | --- | --- |
+| 網頁 | http://127.0.0.1:5173 | MEMO 3D 介面（本機用 Vite 啟動） |
+| API | http://localhost:8000/docs | REST API 與 Swagger |
+| Node-RED | http://localhost:1880 | 每 5 秒送出模擬感測資料，提供環境干擾 |
+| 語音 | http://localhost:8001 | 語音辨識與合成 |
+| SearXNG | http://localhost:8080 | 自架搜尋（只給 API 用） |
+| MQTT | localhost:1883 | Mosquitto broker |
 
-目前 Compose 也包含 Mosquitto 與獨立 MQTT environment-worker。要每 5 秒持續模擬資料，執行 `docker compose --profile demo up -d --build --wait`。接收流程、設定與驗證方式見 [MQTT Worker 說明](docs/mqtt-worker.md)。
+完整流程（輸入、規則、提醒、提示組裝、模型、記憶）見 [LLM 架構](docs/llm-architecture.md)。
 
-MEMO 從感測輸入到主動說話的完整架構（規則、嚴重程度、排程任務、提示與模型）見 [LLM 架構](docs/llm-architecture.md)。
+## 快速開始
 
-Compose 另含本機語音服務 `speech`（http://localhost:8001），在 CPU 上執行，不需 GPU，詳見 [語音服務說明](speech/README.md)。
+需要 Docker（Docker Desktop，或 WSL 內的 Docker Engine，見 [WSL Docker 操作](docs/docker-wsl.md)）與 Node.js。
 
-Compose 也含自架的 SearXNG 搜尋（`searxng`，http://localhost:8080），免費、免金鑰，讓 MEMO 能回答「查一下明天台北天氣」這類問題；只有 API 會呼叫它，只送出搜尋關鍵字。設定在 [searxng/settings.yml](searxng/settings.yml)。網頁的 MEMO 旁邊有一盞小檯燈，可在側欄切換關燈、暗光、溫暖光、白天光。MEMO 不知道燈的模式，也不會控制它，只透過光照感測（`illuminance_lux`）感覺空間多亮多暗；示範時由 Node-RED 依檯燈模擬這個讀值。對話時可以上傳或貼上一張圖片給 MEMO 看（見第 4.6 節），圖片不會被保存。詳見 [LLM 架構](docs/llm-architecture.md) 第 4.4、4.5 節。
+**1. 設定模型**：複製 `.env.example` 為 `.env`，填入模型連線。不填也能跑，MEMO 會用模板回覆。
 
-依 `environment_ai_plan.md` 建立的 Clean Architecture 後端。這一版完成裝置與感測歷史的 HTTP 流程，讓後續 MQTT、規則引擎與 AI 可以沿用 application 層。
+```dotenv
+OPENAI_BASE_URL=https://你的端點/v1
+OPENAI_API_KEY=你的金鑰
+OPENAI_MODEL=模型名稱
+# Gemma 4（BIRC-LLM）實測需要：
+OPENAI_REASONING_EFFORT=none
+OPENAI_SYSTEM_ROLE=false
+OPENAI_JSON_MODE=false
+```
 
-## 本機啟動（PowerShell）
+**2. 啟動後端**（第一次會建置映像，語音模型約 1.6 GB）：
 
-需要 Python 3.11+ 與 uv。在專案根目錄執行：
+```powershell
+docker compose up -d --build --wait
+```
+
+API 啟動時會自動執行資料庫 migration；Node-RED 啟動後就開始送資料。
+
+**3. 啟動網頁**：
+
+```powershell
+cd memo_demo
+npm ci
+Copy-Item .env.example .env.local   # 預設指向 localhost 的 API、Node-RED、語音
+npm run dev
+```
+
+打開 http://127.0.0.1:5173。
+
+**停止**：`docker compose stop`（保留資料），再開用 `docker compose start`。
+
+> WSL 內的 Docker：沒有開著的 WSL 終端時，WSL 可能會閒置關機，容器跟著停止。要長時間運作，請開著一個 Ubuntu 終端。
+
+## 設定
+
+完整清單見 [.env.example](.env.example)。常用的：
+
+| 變數 | 預設 | 說明 |
+| --- | --- | --- |
+| `OPENAI_BASE_URL`／`OPENAI_API_KEY`／`OPENAI_MODEL` | — | OpenAI Chat Completions 相容端點；沒填模型就用模板 |
+| `OPENAI_TIMEOUT_SECONDS` | 30 | 逾時就改用模板 |
+| `OPENAI_REASONING_EFFORT`／`OPENAI_MAX_COMPLETION_TOKENS` | — | 選填，設定才會送出 |
+| `OPENAI_SYSTEM_ROLE`／`OPENAI_JSON_MODE` | true | 模型不理會 system 角色或 JSON 模式時設 `false` |
+| `OPENAI_VISION` | true | 模型不支援圖片時設 `false` |
+| `SEARCH_URL` | — | SearXNG 位址；Compose 內自動設定 |
+| `TIMEZONE` | Asia/Taipei | 每日排程與勿擾時段 |
+| `QUIET_HOURS` | — | 例如 `23:00-07:00`，期間只有危險等級會說 |
+| `MAX_PROACTIVE_PER_HOUR` | 6 | 每小時主動提醒上限（危險不計） |
+| `DATABASE_URL` | `sqlite:///./memo.db` | 本機資料庫；Compose 使用 volume 內的 `/data/memo.db` |
+| `CORS_ORIGINS` | 本機網頁 | 可呼叫 API 的網頁來源（JSON 陣列） |
+
+勿擾時段、每小時上限與人格也可以每個裝置分開設定（`PUT /api/v1/devices/{id}/settings`）；規則門檻可用 `PUT /api/v1/rules/{id}` 修改，都不需要重啟。API key 只放後端，網頁的 `VITE_*` 變數會公開，不要放金鑰。
+
+## 本機開發
+
+需要 Python 3.11+ 與 [uv](https://docs.astral.sh/uv/)。不用 Docker 跑 API：
 
 ```powershell
 uv sync
-Copy-Item .env.example .env
 uv run alembic upgrade head
 uv run uvicorn memo.main:create_app --factory --reload --host 127.0.0.1
 ```
 
-Swagger：http://127.0.0.1:8000/docs；OpenAPI：http://127.0.0.1:8000/openapi.json。
-預設資料保存於 `memo.db`，重啟後保留。不在 API 啟動時自動建表，請先執行 migration。
-
-環境變數不使用前綴（例如 `DATABASE_URL`；模型連線沿用 OpenAI 慣例的 `OPENAI_*`；MQTT worker 使用 `MQTT_`）。將 `.env.example` 複製為 `.env` 後設定；Compose API 也會載入這個檔案，容器資料庫仍使用 `/data/memo.db`。
-
-模型連線使用 `OPENAI_API_KEY`、`OPENAI_BASE_URL`（含 API 版本路徑，預設 `https://api.openai.com/v1`）、`OPENAI_MODEL`、`OPENAI_TIMEOUT_SECONDS`，以及選填的 `OPENAI_REASONING_EFFORT`、`OPENAI_MAX_COMPLETION_TOKENS`（設定才會送出；推理模型設 `low` 或 `none` 可大幅縮短回覆時間），與相容性開關 `OPENAI_SYSTEM_ROLE`、`OPENAI_JSON_MODE`（模型不理會 system 角色或 JSON 模式時設 `false`）。填入模型名稱後會實際呼叫 Chat Completions 相容端點；未設定或呼叫失敗時使用明確標示的備援回覆。API key 僅放後端，設定物件以 `SecretStr` 遮蔽顯示。
-
-升級既有安裝時，請移除環境變數的舊 `MEMO_` 前綴（`MEMO_MQTT_*` 改為 `MQTT_*`；模型設定 `LLM_*` 改為 `OPENAI_*`），並同步更新 MQTT 發布端的 `memo/v1/` topic。既有本機資料庫需搬移至新預設路徑，或用 `DATABASE_URL` 指向原資料庫；Docker volume 路徑沒有變更。
-
-## 分層與依賴
-
-```text
-src/memo/
-├── domain/          # 純 Python entity 與業務錯誤
-├── application/     # Use cases、Repository Protocol
-├── infrastructure/  # SQLAlchemy、Repository 實作、環境設定
-├── presentation/    # FastAPI routes、Pydantic HTTP schema
-└── main.py          # Composition root：組裝依賴、生命週期、錯誤處理
-migrations/          # Alembic schema 版本
-tests/               # 使用獨立 SQLite 的 API / migration 整合測試
-```
-
-依賴方向：`presentation → application → domain`；`infrastructure` 實作 application 的介面；`main.py` 負責接線。Domain / Application 不引用 FastAPI、Pydantic 或 SQLAlchemy。每個 request 使用獨立 Session；目前每個寫入用例只有單一持久化操作，由 Repository 提交交易。
-
-日後新增事件與 outbox 時，需引入 Unit of Work，讓兩者共用交易。MQTT 應使用獨立 worker 入口並呼叫 application use case，避免 API 多進程造成重複訂閱。
-
-## 已實作 API
-
-| Method | Path | 用途 |
-| --- | --- | --- |
-| GET | `/health/live` | 程序存活 |
-| GET | `/health/ready` | 資料庫與必要資料表可讀 |
-| POST | `/api/v1/devices` | 註冊裝置 |
-| GET | `/api/v1/devices` | 裝置清單，支援 limit / offset |
-| GET | `/api/v1/devices/{id}` | 裝置詳情 |
-| POST | `/api/v1/telemetry` | HTTP 測試入口，寫入感測資料；回應列出被剔除的指標 |
-| GET | `/api/v1/devices/{id}/readings` | 依觀測時間倒序，支援 start / end / limit / offset |
-| GET | `/api/v1/devices/{id}/readings/summary` | 依時間區間彙總平均／最小／最大（預設最近一小時、每分鐘） |
-| GET | `/api/v1/devices/{id}/state` | 每個指標最新的有效值、資料年齡、是否新鮮、體感溫度 |
-| GET | `/api/v1/devices/{id}/events/history` | 最近的事件（開始、結束、最高等級、規則版本） |
-| GET | `/api/v1/devices/{id}/events/{event_id}` | 事件證據與每次變化 |
-| POST | `/api/v1/devices/{id}/events/{event_id}/ack`、`/snooze`、`/handled` | 確認、延後、記錄已處理並排程追蹤 |
-| GET／PUT | `/api/v1/rules`、`/api/v1/rules/{id}` | 查詢或修改規則門檻，免重啟 |
-| GET／PUT | `/api/v1/devices/{id}/settings` | 人格、勿擾時段、每小時提醒上限 |
-| GET／PUT | `/api/v1/devices/{id}/lamp` | 檯燈模式：off／dim／warm／day（也接受 on、brighter、dimmer） |
-
-對話、通知、排程等其他端點見 [LLM 架構](docs/llm-architecture.md) 第 10 節。
+MQTT worker 與模擬器（需要 broker）：
 
 ```powershell
-$device = @{ id = 'room01'; name = '書房'; location = '二樓' } | ConvertTo-Json
-Invoke-RestMethod http://127.0.0.1:8000/api/v1/devices -Method Post -ContentType 'application/json; charset=utf-8' -Body ([System.Text.Encoding]::UTF8.GetBytes($device))
-
-$reading = @{
-    schema_version = 1
-    message_id = [guid]::NewGuid().ToString()
-    device_id = 'room01'
-    observed_at = [DateTimeOffset]::UtcNow.ToString('o')
-    sequence = 1
-    metrics = @{ temperature_c = 29.2; humidity_pct = 65; co2_ppm = 1100 }
-    quality = 'ok'
-} | ConvertTo-Json
-Invoke-RestMethod http://127.0.0.1:8000/api/v1/telemetry -Method Post -ContentType 'application/json' -Body $reading
-Invoke-RestMethod http://127.0.0.1:8000/api/v1/devices/room01/readings
+uv run python -m memo.workers.environment
+uv run python -m memo.workers.simulator --scenario co2-rise-recover --count 73
 ```
 
-相同 message_id 與相同內容重送時回傳原資料；同 ID 不同內容回 409。裝置不存在回 404，格式錯誤回 422。時間必須包含時區，落庫及輸出統一 UTC；缺少的指標保留 null。歷史查詢時間範圍含兩端。
-
-每個指標分別驗證：超出合理範圍的指標記為缺值並列在回應的 `rejected_metrics`，同一封包的其他指標照常保存；所有指標都無效才回 422。MQTT 使用同一份驗證。`quality` 不是 `ok` 的讀值會保存，但不參與判斷。觀測時間與接收時間相差超過 30 秒的補送資料只存歷史，不觸發提醒。
-
-## 驗證與資料庫
+**檢查**：
 
 ```powershell
-uv run pytest
+uv run pytest                 # 後端測試（使用獨立的 SQLite）
 uv run ruff check .
 uv run ruff format --check .
 uv run alembic check
+cd memo_demo; npm run test:browser   # 瀏覽器整合測試，需要整套服務在跑
 ```
 
-`uv.lock` 鎖定實際依賴版本。使用 PostgreSQL 時先建立資料庫，再修改 `.env`：
+**專案結構**：
 
-```dotenv
-DATABASE_URL=postgresql+psycopg://memo:password@localhost:5432/memo
+```text
+src/memo/
+├── domain/          # 純 Python：規則引擎、排程解析、記憶分段與壓縮規則
+├── application/     # 對話流程、提示組裝、use cases
+├── infrastructure/  # 資料庫、模型與搜尋轉接、派送器、排程器、記憶壓縮
+├── presentation/    # FastAPI routes 與 schema
+├── workers/         # MQTT environment-worker、模擬器
+└── main.py          # 組裝依賴與背景執行緒
+migrations/          # Alembic 資料庫版本
+memo_demo/           # 網頁（Vite + Three.js）
+speech/              # 語音服務（sherpa-onnx）
+node-red/            # 預載的 Node-RED 流程
+searxng/             # SearXNG 設定
+docs/                # 架構與 API 文件
 ```
 
-接著執行 `uv run alembic upgrade head`。目前自動測試使用 SQLite；PostgreSQL 需另做環境整合驗證。
+依賴方向：`presentation → application → domain`；`infrastructure` 實作 application 的介面；domain 與 application 不引用 FastAPI 或 SQLAlchemy。
 
-## LLM 輸入、人格與文字／情緒契約
+## API 概覽
 
-已提供 `/api/v1/llm/personality`、`/api/v1/llm/prepare`、`/api/v1/llm/respond`。已實作模型呼叫、格式驗證與模板備援。人格可依請求設定 gentle / lively / concise；輸出包含 text 與 emotion（label、intensity）。
+完整規格見 [openapi.yaml](docs/openapi.yaml) 或 Swagger。路徑前綴皆為 `/api/v1`。
 
-詳見 [LLM 介面說明](docs/llm-api.md)、[OpenAPI YAML](docs/openapi.yaml) 與 [模型輸出 JSON Schema](docs/llm-output.schema.json)。
+| 類別 | 端點 |
+| --- | --- |
+| 裝置與讀值 | `POST /devices`、`GET /devices`、`POST /telemetry`、`GET /devices/{id}/readings`、`…/readings/summary`、`…/state` |
+| 對話 | `POST /devices/{id}/interaction`（可附圖片）、`POST /devices/{id}/digest` |
+| 主動提醒 | `GET /devices/{id}/notifications`、`POST …/notifications/ack` |
+| 事件 | `GET /devices/{id}/events`、`…/events/history`、`…/events/{event_id}`、`POST …/ack`、`…/snooze`、`…/handled` |
+| 排程 | `GET／POST /devices/{id}/schedules`、`PATCH／DELETE …/schedules/{job}` |
+| 記憶 | `GET／DELETE /devices/{id}/memory/conversation`、`GET／PUT／DELETE …/memory/profile`、`GET …/memory/summaries` |
+| 設定 | `GET／PUT /rules`、`/rules/{id}`、`/devices/{id}/settings`、`/devices/{id}/lamp` |
+| 健康檢查 | `GET /health/live`、`GET /health/ready`（不在 `/api/v1` 下） |
 
-模型、任務／對話記憶、環境事件與六分鐘 CO₂ 劇本已實作，見 [執行說明](docs/companion-runtime.md)。
+送一筆讀值（PowerShell）：
 
-## 下一階段
+```powershell
+$reading = @{
+    message_id = [guid]::NewGuid().ToString(); device_id = 'room01'; sequence = 1
+    observed_at = [DateTimeOffset]::UtcNow.ToString('o')
+    metrics = @{ temperature_c = 29.2; humidity_pct = 65; co2_ppm = 1100; illuminance_lux = 300 }
+} | ConvertTo-Json
+Invoke-RestMethod http://127.0.0.1:8000/api/v1/telemetry -Method Post -ContentType 'application/json' -Body $reading
+```
 
-- Mosquitto 帳號、ACL、TLS；MQTT `status`（Last Will）與送往實體裝置的 `commands`／`acks`。
-- API 身分驗證與裝置授權（目前是本機開發雛形）。
-- 資料保留策略（原始資料 30 天、長期改存彙總）與 PostgreSQL 整合驗證。
-- 展示用的注入時鐘、通知 SSE。
+資料規則：相同 `message_id` 重送回傳原資料，內容不同回 409；時間必須含時區，統一以 UTC 儲存；超出合理範圍的指標記為缺值並列在 `rejected_metrics`，其他指標照常保存；與接收時間相差超過 30 秒的補送資料只存歷史，不觸發提醒。
 
-以上功能尚未實作，完整規劃仍以 `environment_ai_plan.md` 為準。
+## 文件
 
-架構參考：[FastAPI 多檔案應用](https://fastapi.tiangolo.com/tutorial/bigger-applications/)、[環境設定](https://fastapi.tiangolo.com/advanced/settings/)、[Lifespan](https://fastapi.tiangolo.com/advanced/events/)。
+| 文件 | 內容 |
+| --- | --- |
+| [LLM 架構](docs/llm-architecture.md) | 輸入到說話的完整流程：規則、提醒、排程、搜尋、看圖、記憶、提示、模型 |
+| [執行說明](docs/companion-runtime.md) | 規則表、事件狀態、記憶分離、投遞與人格 |
+| [MQTT Worker](docs/mqtt-worker.md) | 封包格式、接收流程、驗證方式 |
+| [LLM 介面](docs/llm-api.md) | 無狀態的 `/llm/prepare`、`/llm/respond` |
+| [WSL Docker 操作](docs/docker-wsl.md) | 在 WSL 內使用 Docker |
+| [網頁](memo_demo/README.md)／[Node-RED](node-red/README.md)／[語音](speech/README.md) | 各元件的使用說明 |
+| [原始規劃](environment_ai_plan.md) | 最初的架構與實作規格 |
+
+## 升級既有安裝
+
+- **資料庫**：本機執行 `uv run alembic upgrade head`；Docker 版由 API 啟動時自動升級。
+- **Node-RED 流程**：既有的 volume 不會被新版範例覆蓋。要更新時，在編輯器刪除舊的範例分頁，再 Import [node-red/flows.json](node-red/flows.json) 並 Deploy。
+- **舊的環境變數**：舊版的 `MEMO_` 前綴已移除（`MEMO_MQTT_*` 改為 `MQTT_*`，`LLM_*` 改為 `OPENAI_*`）；MQTT topic 使用 `memo/v1/`。
+
+## 尚未完成
+
+- 語音：BMO 風格音色（音高、句尾上揚、小喇叭效果）、英文口音、依情緒調整語調、聽出使用者的語氣情緒。
+- 影像：鏡頭拍照（目前只能上傳或貼上圖片）。
+- 網頁上的任務清單（暫停、刪除）；秒級提醒。
+- MQTT 帳號、ACL、TLS 與裝置上下線狀態；送往實體裝置的 `commands`／`acks`。
+- API 身分驗證；資料保留策略與 PostgreSQL 整合驗證。
+- PM2.5、人體感測、翻譯。
+
+目前是本機開發用的雛形，沒有身分驗證，請勿直接對外開放。
