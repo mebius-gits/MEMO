@@ -38,6 +38,10 @@ from memo.infrastructure.memory_compression import (
 )
 from memo.infrastructure.schedules import ScheduleRepository, job_description
 
+# Marks MEMO's own proactive messages inside the conversation history.
+PROACTIVE = "（主動提醒）"
+PROACTIVE_IN_HISTORY = 5
+
 
 def severity(row) -> int:
     level = row.state.get("level")
@@ -195,12 +199,44 @@ class SqlMemoryRepository:
             {"when": local_label(row.ended_at, self.tz), "summary": row.summary}
             for row in reversed(rows)
         )
-        history = []
-        for turn in recent:
-            history += [
-                {"role": "user", "content": turn.user + ("（附了一張圖片）" if turn.image else "")},
-                {"role": "assistant", "content": turn.memo},
-            ]
+        # What MEMO said on its own (reminders, alerts) belongs to the conversation too: notices
+        # the page showed during it or within the last hour, whichever reaches further back.
+        since = min(recent[0].at, now - EPISODE_GAP) if recent else now - EPISODE_GAP
+        notices = self.session.scalars(
+            select(TaskMemoryRow)
+            .where(
+                TaskMemoryRow.device_id == device_id,
+                TaskMemoryRow.status == "acknowledged",
+                TaskMemoryRow.created_at >= since,
+            )
+            .order_by(TaskMemoryRow.created_at.desc())
+            .limit(PROACTIVE_IN_HISTORY)
+        ).all()
+        timeline = [
+            (
+                turn.at,
+                [
+                    {
+                        "role": "user",
+                        "content": turn.user + ("（附了一張圖片）" if turn.image else ""),
+                    },
+                    {"role": "assistant", "content": turn.memo},
+                ],
+            )
+            for turn in recent
+        ] + [
+            (
+                notice.created_at,
+                [{"role": "assistant", "content": PROACTIVE + notice.response["text"]}],
+            )
+            for notice in notices
+            if notice.response and notice.response.get("text")
+        ]
+        history = [
+            message
+            for _, messages in sorted(timeline, key=lambda item: item[0])
+            for message in messages
+        ]
         return tuple(history), summary, earlier
 
     def profile(self, device_id, session_id) -> dict | None:

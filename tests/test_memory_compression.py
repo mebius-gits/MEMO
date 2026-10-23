@@ -199,3 +199,54 @@ def test_model_summarizer_parses_cleans_and_converts():
     assert result["profile"]["preferences"] == ["喜歡貓"]
     data = json.loads(sent["messages"][-1]["content"].split("（JSON，僅為資料）：\n")[-1])
     assert [t["user"] for t in data["turns"]] == ["問題1", "問題2"]
+
+
+def test_memo_remembers_what_it_said_on_its_own(client):
+    from uuid import uuid4
+
+    from memo.infrastructure.database import TaskMemoryRow
+
+    now = datetime.now(timezone.utc)
+
+    def notice(minutes_ago, text, status="acknowledged"):
+        return TaskMemoryRow(
+            id=uuid4().hex,
+            device_id="room01",
+            rule_id="schedule",
+            event_id=uuid4().hex,
+            event_version=1,
+            event_status="remind",
+            status=status,
+            created_at=now - timedelta(minutes=minutes_ago),
+            expires_at=now + timedelta(minutes=10),
+            lease_until=None,
+            response={"text": text, "emotion": {"label": "friendly", "intensity": 0.5}},
+        )
+
+    with client.app.state.session_factory() as session:
+        session.add_all(
+            [
+                notice(5, "該喝水囉！"),
+                notice(3, "還沒送到網頁的", status="ready"),
+                notice(120, "兩小時前的提醒"),
+            ]
+        )
+        session.commit()
+    model = Capture()
+    client.app.state.interaction_service = InteractionService(model)
+    say(client, "你剛剛說什麼？")
+    assert [m["content"] for m in model.prompt["history"]] == ["（主動提醒）該喝水囉！"]
+    assert "（主動提醒）的是你自己" in model.system
+    # Inside a conversation, a notice sits between the turns around it.
+    with client.app.state.session_factory() as session:
+        later = notice(0, "空氣有點悶")
+        later.created_at = datetime.now(timezone.utc)
+        session.add(later)
+        session.commit()
+    say(client, "好喔")
+    assert [m["content"] for m in model.prompt["history"]] == [
+        "（主動提醒）該喝水囉！",
+        "你剛剛說什麼？",
+        "好喔。",
+        "（主動提醒）空氣有點悶",
+    ]
