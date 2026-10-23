@@ -7,11 +7,14 @@ the same way: the deterministic Chinese phrase parser below, and a model's optio
      "message": "喝水", "minutes": 10, "time": "09:00"}
     {"type": "snooze", "minutes": 30}
     {"type": "cancel" | "pause" | "resume", "match": "喝水"}   # empty match = all
+    {"type": "search", "query": "明天台北天氣"}
 """
 
 import re
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
+
+from memo.domain.web import parse_search, validate_search
 
 KINDS = ("once", "interval", "daily", "followup")
 MINUTE_LIMITS = {"once": (1, 1440), "interval": (5, 1440), "followup": (1, 120)}
@@ -70,6 +73,8 @@ def validate_action(raw) -> dict | None:
     if kind_of in ("cancel", "pause", "resume"):
         match = str(raw.get("match") or "").strip()[:30]
         return {"type": kind_of, "match": "" if match in ("所有", "全部") else match}
+    if kind_of == "search":
+        return validate_search(raw)
     return None
 
 
@@ -140,6 +145,8 @@ _SNOOZE = re.compile(
 
 def parse_intent(text: str) -> dict | None:
     """Recognise common task phrasings; returns a validated action or None."""
+    # Search queries keep their spaces ("Python 3.14"); everything else matches without them.
+    spaced = re.sub(r"\s+", " ", text.translate(_WIDE)).strip()
     text = re.sub(r"\s+", "", text.translate(_WIDE))
     if match := _CANCEL.search(text):
         return validate_action({"type": "cancel", "match": _message(match["what"])})
@@ -200,6 +207,9 @@ def parse_intent(text: str) -> dict | None:
                 "minutes": _minutes(later["n"], later["unit"]) if later else FOLLOWUP_DEFAULT,
             }
         )
+    # Explicit look-ups come before the loose "知道了" snooze phrasing.
+    if action := parse_search(spaced):
+        return action
     if _SNOOZE.search(text):
         return {"type": "snooze", "minutes": SNOOZE_DEFAULT}
     return None

@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     DateTime,
     Float,
     ForeignKey,
@@ -54,6 +55,7 @@ class ReadingRow(Base):
     humidity_pct: Mapped[float | None] = mapped_column(Float)
     co2_ppm: Mapped[float | None] = mapped_column(Float)
     quality: Mapped[str] = mapped_column(String(16))
+    illuminance_lux: Mapped[float | None] = mapped_column(Float)
 
 
 class EventStateRow(Base):
@@ -61,6 +63,36 @@ class EventStateRow(Base):
     device_id: Mapped[str] = mapped_column(ForeignKey("devices.id"), primary_key=True)
     rule_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     state: Mapped[dict] = mapped_column(JSON)
+
+
+class EventUpdateRow(Base):
+    """Append-only evidence for an event: notices, unknown/offline spells, user actions."""
+
+    __tablename__ = "event_updates"
+    __table_args__ = (Index("ix_event_updates_device_event", "device_id", "event_id"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    device_id: Mapped[str] = mapped_column(ForeignKey("devices.id"))
+    rule_id: Mapped[str] = mapped_column(String(64))
+    event_id: Mapped[str] = mapped_column(String(64))
+    event_version: Mapped[int] = mapped_column(Integer)
+    # active | escalated | reminder | resolved | unknown | acknowledged | snoozed | handled
+    # | rule_changed | rule_disabled
+    kind: Mapped[str] = mapped_column(String(24))
+    level: Mapped[str | None] = mapped_column(String(16))
+    value: Mapped[float | None] = mapped_column(Float)
+    detail: Mapped[dict | None] = mapped_column(JSON)
+    at: Mapped[datetime] = mapped_column(UTCDateTime())
+
+
+class RuleConfigRow(Base):
+    """Threshold overrides for a built-in rule; absent means the code defaults apply."""
+
+    __tablename__ = "rule_configs"
+    rule_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean)
+    override: Mapped[dict] = mapped_column(JSON)
+    version: Mapped[int] = mapped_column(Integer)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime())
 
 
 class TaskMemoryRow(Base):
@@ -106,6 +138,20 @@ class DeviceSettingRow(Base):
     __tablename__ = "device_settings"
     device_id: Mapped[str] = mapped_column(ForeignKey("devices.id"), primary_key=True)
     personality: Mapped[dict] = mapped_column(JSON)
+    # Per-device overrides of server defaults: quiet_hours, max_proactive_per_hour.
+    preferences: Mapped[dict | None] = mapped_column(JSON)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime())
+
+
+class LampStateRow(Base):
+    """The desk lamp beside MEMO; no row means the default mode."""
+
+    __tablename__ = "lamp_states"
+    device_id: Mapped[str] = mapped_column(ForeignKey("devices.id"), primary_key=True)
+    mode: Mapped[str] = mapped_column(String(8))  # off | dim | warm | day
+    # The last lit mode, so "開燈" brings back what was on before "關燈".
+    last_on: Mapped[str | None] = mapped_column(String(8))
+    changed_by: Mapped[str] = mapped_column(String(16))  # chat | api
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime())
 
 
@@ -122,6 +168,35 @@ class ConversationRow(Base):
         Index("ix_conversation_scope", "device_id", "session_id", "id"),
         Index("uq_conversation_request", "device_id", "session_id", "request_id", unique=True),
     )
+
+
+class MemorySummaryRow(Base):
+    """Compressed conversation: the running summary of an open episode, or a finished one."""
+
+    __tablename__ = "memory_summaries"
+    __table_args__ = (
+        Index("ix_memory_summaries_scope", "device_id", "session_id", "last_turn_id"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    device_id: Mapped[str] = mapped_column(ForeignKey("devices.id"))
+    session_id: Mapped[str] = mapped_column(String(64))
+    kind: Mapped[str] = mapped_column(String(16))  # running | episode
+    first_turn_id: Mapped[int] = mapped_column(Integer)
+    last_turn_id: Mapped[int] = mapped_column(Integer)
+    started_at: Mapped[datetime] = mapped_column(UTCDateTime())
+    ended_at: Mapped[datetime] = mapped_column(UTCDateTime())
+    summary: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime())
+
+
+class UserProfileRow(Base):
+    """What the person has said about themselves (name, likes, projects), per memory scope."""
+
+    __tablename__ = "user_profiles"
+    device_id: Mapped[str] = mapped_column(ForeignKey("devices.id"), primary_key=True)
+    session_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    profile: Mapped[dict] = mapped_column(JSON)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime())
 
 
 def build_engine(url: str):

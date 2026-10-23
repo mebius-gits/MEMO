@@ -133,6 +133,10 @@ def test_replies_are_kept_to_conversational_length():
     assert kept.endswith("。") and len(kept) <= 80 and kept.startswith("現在溫度 35 度")
     run_on = "這" * 120
     assert conversational(run_on) == "這" * 79 + "…"
+    # A filler opener must not swallow the answer that follows it.
+    answer = "欸，我查了一下。" + "沃爾瑪今天發表新工具，讓 AI 代理代替顧客購物" * 3 + "。"
+    kept = conversational(answer)
+    assert "沃爾瑪" in kept and len(kept) == 80 and kept.endswith("…")
 
 
 def test_optional_openai_parameters_are_sent_when_configured():
@@ -212,3 +216,15 @@ def test_model_reply_text_is_traditional():
         service.prepare(InteractionInput("嗨", Personality()), datetime.now(timezone.utc))
     )
     assert reply.text == "記得喝水，別中暑。"
+
+
+def test_reply_object_survives_braces_in_prose_and_bare_search():
+    from memo.infrastructure.model_reply import extract_action
+
+    noisy = '好的 {先想想} 這是回覆：```json\n{"text":"嗨","emotion":{"label":"happy"}}\n```'
+    assert parse_content(noisy)[0] == "嗨"
+    bare = '{"action":{"type":"search","query":"台北101高度"}}'
+    assert parse_content(bare)[0] == "我去查一下。"
+    assert extract_action(bare) == {"type": "search", "query": "台北101高度"}
+    with pytest.raises(ValueError):
+        parse_content('{"action":{"type":"lamp","mode":"off"}}')

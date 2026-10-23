@@ -31,7 +31,7 @@ def to_input(payload: InteractionRequest) -> InteractionInput:
         user_message=payload.user_message,
         personality=Personality(**payload.personality.model_dump()),
         observation=Observation(
-            observation.observed_at, observation.metrics.model_dump(), observation.quality
+            observation.observed_at, observation.metrics.usable(), observation.quality
         )
         if observation
         else None,
@@ -56,14 +56,16 @@ def device_interaction(
     device_id: str,
     payload: DeviceInteractionRequest,
     memory: Memory,
+    request: Request,
     service: InteractionService = Depends(get_interaction_service),
 ):
-    return CompanionService(memory, service).chat(
+    return CompanionService(memory, service, request.app.state.searcher).chat(
         device_id,
         payload.session_id,
         str(payload.request_id),
         payload.user_message,
         Personality(**payload.personality.model_dump()),
+        payload.image,
     )
 
 

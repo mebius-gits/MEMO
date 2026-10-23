@@ -73,6 +73,15 @@ class InteractionInput:
     actions_done: tuple[str, ...] = ()
     # Notices the user did not see while away, for the welcome-back digest.
     missed: tuple[dict, ...] = ()
+    # A web look-up made for this message: query, status, results (title/source/snippet/url).
+    web_search: dict | None = None
+    # An image the user attached, as a data URL; shown to the model, never stored or logged.
+    image: str | None = None
+    # Long-term memory: what the person said about themselves (name, likes, projects).
+    profile: dict | None = None
+    # Compressed memory: older part of this conversation, and a few earlier conversations.
+    conversation_summary: str | None = None
+    earlier: tuple[dict, ...] = ()
 
 
 @dataclass(frozen=True)

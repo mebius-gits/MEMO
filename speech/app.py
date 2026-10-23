@@ -111,6 +111,7 @@ def speakable(text: str) -> str:
     text = re.sub(r"(\d+(?:\.\d+)?)\s*°\s*C", r"\1度", text)
     text = re.sub(r"(\d+(?:\.\d+)?)\s*[%％]", r"百分之\1", text)
     text = re.sub(r"\s*ppm\b", " PPM", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*lux\b", "勒克斯", text, flags=re.IGNORECASE)
     # Emoji and other symbols carry no speech.
     text = re.sub(r"[^\w\s，。！？、；：,.!?;:\"'「」『』（）()~～\-]", "", text)
     return to_simplified.convert(text).strip()
@@ -118,7 +119,12 @@ def speakable(text: str) -> str:
 
 @app.get("/health")
 def health():
-    return {"status": "ready", "speakers": tts.num_speakers, "speaker_id": SPEAKER_ID, "speed": DEFAULT_SPEED}
+    return {
+        "status": "ready",
+        "speakers": tts.num_speakers,
+        "speaker_id": SPEAKER_ID,
+        "speed": DEFAULT_SPEED,
+    }
 
 
 @app.post("/stt")

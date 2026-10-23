@@ -842,10 +842,10 @@
     "y": 300,
     "wires": [
       [
-        "mqtt-build"
+        "mqtt-lamp-build"
       ],
       [
-        "mqtt-build"
+        "mqtt-lamp-build"
       ],
       [
         "mqtt-error"
@@ -873,6 +873,50 @@
     "outputs": 3
   },
   {
+    "id": "mqtt-lamp-build",
+    "type": "function",
+    "z": "memo-mqtt",
+    "name": "讀取檯燈（模擬光照）",
+    "func": "// The light sensor is simulated: the lamp on the web page decides how bright the room is.\n// Only this simulator reads the lamp; MEMO sees nothing but the resulting lux.\nconst base = (env.get('API_URL') || 'http://api:8000').replace(/\\/$/, '');\nconst device = env.get('DEVICE_ID') || 'room01';\nmsg.method = 'GET';\nmsg.url = base + '/api/v1/devices/' + encodeURIComponent(device) + '/lamp';\nmsg.headers = {'Connection':'close'};\ndelete msg.payload;\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1340,
+    "y": 300,
+    "wires": [
+      [
+        "mqtt-lamp-http"
+      ]
+    ]
+  },
+  {
+    "id": "mqtt-lamp-http",
+    "type": "http request",
+    "z": "memo-mqtt",
+    "name": "GET /lamp",
+    "x": 1530,
+    "y": 300,
+    "wires": [
+      [
+        "mqtt-build"
+      ]
+    ],
+    "method": "use",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": []
+  },
+  {
     "id": "mqtt-build",
     "type": "function",
     "z": "memo-mqtt",
@@ -884,7 +928,7 @@
         "mqtt-publish"
       ]
     ],
-    "func": "const device = env.get('DEVICE_ID') || 'room01';\nconst sequence = (flow.get('memo_mqtt_sequence') || 0) + 1;\nflow.set('memo_mqtt_sequence', sequence);\n// Random walk inside a normal band below the backend alert thresholds: [min, max, max step, centre].\nconst NORMAL = {temperature_c: [23, 27.5, 0.12, 25], humidity_pct: [45, 68, 0.8, 58], co2_ppm: [550, 950, 20, 750]};\nconst LIMIT = {temperature_c: [-20, 50], humidity_pct: [0, 100], co2_ppm: [350, 5000]};\nconst clamp = (value, [low, high]) => Math.min(high, Math.max(low, value));\nconst base = flow.get('memo_mqtt_base') || {};\nconst target = flow.get('memo_mqtt_anomaly') || {};\nconst applied = flow.get('memo_mqtt_applied') || {};\nconst metrics = {};\nfor (const [key, [low, high, step, centre]] of Object.entries(NORMAL)) {\n  const previous = base[key] ?? centre;\n  base[key] = clamp(previous + (Math.random() * 2 - 1) * step + (centre - previous) * 0.02, [low, high]);\n  // Manual anomaly offsets ease in and out over a few samples instead of jumping.\n  const goal = target[key] || 0, current = applied[key] || 0;\n  applied[key] = Math.abs(goal - current) < step ? goal : current + (goal - current) * 0.35;\n  metrics[key] = Number(clamp(base[key] + applied[key], LIMIT[key]).toFixed(key === 'co2_ppm' ? 0 : 1));\n}\nflow.set('memo_mqtt_base', base);\nflow.set('memo_mqtt_applied', applied);\nflow.set('memo_mqtt_latest', {...metrics, observed_at: new Date().toISOString()});\nconst abnormal = Object.values(applied).some(Boolean);\nnode.status({fill: abnormal ? 'red' : 'green', shape: 'dot', text: metrics.temperature_c + '°C ' + metrics.humidity_pct + '% ' + metrics.co2_ppm + 'ppm'});\nmsg.topic = 'memo/v1/' + device + '/telemetry';\nmsg.payload = {schema_version:1, message_id:device + '-' + Date.now() + '-' + msg._msgid,\n  device_id:device, observed_at:new Date().toISOString(), sequence:sequence, metrics, quality:'ok'};\nreturn msg;",
+    "func": "const device = env.get('DEVICE_ID') || 'room01';\nconst sequence = (flow.get('memo_mqtt_sequence') || 0) + 1;\nflow.set('memo_mqtt_sequence', sequence);\n// Random walk inside a normal band below the backend alert thresholds: [min, max, max step, centre].\nconst NORMAL = {temperature_c: [23, 27.5, 0.12, 25], humidity_pct: [45, 68, 0.8, 58], co2_ppm: [550, 950, 20, 750]};\nconst LIMIT = {temperature_c: [-20, 50], humidity_pct: [0, 100], co2_ppm: [350, 5000]};\nconst clamp = (value, [low, high]) => Math.min(high, Math.max(low, value));\nconst base = flow.get('memo_mqtt_base') || {};\nconst target = flow.get('memo_mqtt_anomaly') || {};\nconst applied = flow.get('memo_mqtt_applied') || {};\nconst metrics = {};\nfor (const [key, [low, high, step, centre]] of Object.entries(NORMAL)) {\n  const previous = base[key] ?? centre;\n  base[key] = clamp(previous + (Math.random() * 2 - 1) * step + (centre - previous) * 0.02, [low, high]);\n  // Manual anomaly offsets ease in and out over a few samples instead of jumping.\n  const goal = target[key] || 0, current = applied[key] || 0;\n  applied[key] = Math.abs(goal - current) < step ? goal : current + (goal - current) * 0.35;\n  metrics[key] = Number(clamp(base[key] + applied[key], LIMIT[key]).toFixed(key === 'co2_ppm' ? 0 : 1));\n}\n// Simulated light sensor: eases toward the lamp's brightness, with a little sensor noise.\n// A failed lamp read keeps the last known lamp.\nif (msg.statusCode === 200 && msg.payload && msg.payload.mode) flow.set('memo_lamp_mode', msg.payload.mode);\nconst LUX = {off: 3, dim: 60, warm: 260, day: 650};\nconst goalLux = LUX[flow.get('memo_lamp_mode')] ?? LUX.day;\nconst lastLux = flow.get('memo_mqtt_lux') ?? goalLux;\nconst lux = lastLux + (goalLux - lastLux) * 0.6;\nflow.set('memo_mqtt_lux', lux);\nmetrics.illuminance_lux = Math.max(0, Math.round(lux * (1 + (Math.random() * 2 - 1) * 0.03)));\nflow.set('memo_mqtt_base', base);\nflow.set('memo_mqtt_applied', applied);\nflow.set('memo_mqtt_latest', {...metrics, observed_at: new Date().toISOString()});\nconst abnormal = Object.values(applied).some(Boolean);\nnode.status({fill: abnormal ? 'red' : 'green', shape: 'dot', text: metrics.temperature_c + '°C ' + metrics.humidity_pct + '% ' + metrics.co2_ppm + 'ppm ' + metrics.illuminance_lux + 'lux'});\nmsg.topic = 'memo/v1/' + device + '/telemetry';\nmsg.payload = {schema_version:1, message_id:device + '-' + Date.now() + '-' + msg._msgid,\n  device_id:device, observed_at:new Date().toISOString(), sequence:sequence, metrics, quality:'ok'};\nreturn msg;",
     "outputs": 1,
     "timeout": 0,
     "noerr": 0,

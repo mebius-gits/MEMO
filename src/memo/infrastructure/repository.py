@@ -83,3 +83,30 @@ class SqlAlchemyRepository:
             query = query.where(ReadingRow.observed_at <= end)
         query = query.order_by(ReadingRow.observed_at.desc(), ReadingRow.message_id)
         return [to_reading(row) for row in self.session.scalars(query.limit(limit).offset(offset))]
+
+    def latest_valid(self, device_id: str, metric: str) -> tuple[float, datetime] | None:
+        column = getattr(ReadingRow, metric)
+        row = self.session.execute(
+            select(column, ReadingRow.observed_at)
+            .where(
+                ReadingRow.device_id == device_id,
+                ReadingRow.quality == "ok",
+                column.is_not(None),
+            )
+            .order_by(ReadingRow.observed_at.desc())
+            .limit(1)
+        ).first()
+        return (row[0], row[1]) if row else None
+
+    def valid_readings(self, device_id: str, start: datetime, end: datetime) -> list[Reading]:
+        rows = self.session.scalars(
+            select(ReadingRow)
+            .where(
+                ReadingRow.device_id == device_id,
+                ReadingRow.quality == "ok",
+                ReadingRow.observed_at >= start,
+                ReadingRow.observed_at < end,
+            )
+            .order_by(ReadingRow.observed_at)
+        )
+        return [to_reading(row) for row in rows]

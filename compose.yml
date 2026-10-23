@@ -19,6 +19,7 @@ services:
       APP_NAME: MEMO
       CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:5173","http://127.0.0.1:5173","https://memo-quiet-room.fancyhen36.chatgpt.site"]}
       DATABASE_URL: sqlite:////data/memo.db
+      SEARCH_URL: http://searxng:8080
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
@@ -109,6 +110,18 @@ services:
       TTS_SPEED: ${TTS_SPEED:-1.3}
     ports:
       - "127.0.0.1:8001:8000"
+
+  # Self-hosted metasearch for "查一下…"; only the API calls it (JSON). Free, no API key.
+  # The port is published on localhost for running the API outside Docker and for debugging.
+  searxng:
+    image: searxng/searxng:2026.10.19-81371861f
+    restart: unless-stopped
+    environment:
+      SEARXNG_SECRET: ${SEARXNG_SECRET:-memo-local-only-change-me}
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
 
 volumes:
   memo-data:

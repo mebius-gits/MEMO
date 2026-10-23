@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import or_, select, update
 
-from memo.domain.environment import suggestions_for
+from memo.domain.environment import SENSOR_RULE, suggestions_for
 from memo.domain.interaction import EventContext, InteractionInput
 from memo.infrastructure.database import DeviceRow, EventStateRow, ScheduledJobRow, TaskMemoryRow
 from memo.infrastructure.environment_events import SCHEDULE_RULE, attention_context, current_task
@@ -27,6 +27,13 @@ NOTICE_PROMPTS = {
         "可從 approved_suggestions 挑一個建議。"
     ),
     "resolved": "狀況已經恢復，用一句話簡短告訴使用者。",
+}
+SENSOR_PROMPTS = {
+    "active": (
+        "感測資料已經中斷超過 30 秒，你現在看不到任何環境數值。用一句話告訴使用者，"
+        "說你會等資料回來；不要猜測原因，也不要引用舊的數值。"
+    ),
+    "resolved": "感測資料恢復了，用一句話告訴使用者你又看得到環境了。",
 }
 SCHEDULE_PROMPTS = {
     "remind": "到了使用者指定的提醒時間，請用你的人格提醒他：{message}。",
@@ -51,6 +58,8 @@ def notice_request(session, task, memory, tz):
         proactive=True,
         task_memory=context["task_memory"],
         jobs=context["jobs"],
+        # Notices may call the person by name; they never see conversation history.
+        profile=memory.latest_profile(device_id),
     )
     if task.rule_id == SCHEDULE_RULE:
         job = session.get(ScheduledJobRow, task.event_id)
@@ -63,8 +72,9 @@ def notice_request(session, task, memory, tz):
     row = session.get(EventStateRow, (device_id, task.rule_id))
     attention = attention_context(task.rule_id, row.state if row else {}, task.event_status)
     resolved = task.event_status == "resolved"
+    prompts = SENSOR_PROMPTS if task.rule_id == SENSOR_RULE else NOTICE_PROMPTS
     return InteractionInput(
-        user_message=NOTICE_PROMPTS[task.event_status].format(**attention),
+        user_message=prompts[task.event_status].format(**attention),
         event=EventContext(
             task.event_id,
             task.event_version,

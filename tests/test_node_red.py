@@ -44,6 +44,12 @@ for (const n of nodes.filter(n => n.type === 'function')) {
 const byId = Object.fromEntries(nodes.map(n => [n.id, n]));
 const sample = i => fns['mqtt-build']({_msgid:'drift-' + i}, env, flow, node).payload;
 const normal = Array.from({length: 500}, (_, i) => sample(i).metrics);
+// The simulated light sensor follows the lamp read from the API just before each sample.
+let dark;
+for (let i = 0; i < 8; i++) {
+    const lamp = i ? {} : {statusCode: 200, payload: {mode: 'off'}};
+    dark = fns['mqtt-build']({_msgid: 'dark-' + i, ...lamp}, env, flow, node).payload.metrics;
+}
 fns['mqtt-anomaly']({payload: JSON.parse(byId['mqtt-anomaly-co2'].payload)}, env, flow, node);
 let raised; for (let i = 0; i < 20; i++) raised = sample('raised-' + i);
 fns['mqtt-anomaly']({payload: JSON.parse(byId['mqtt-anomaly-reset'].payload)}, env, flow, node);
@@ -58,7 +64,7 @@ const webBad = web('POST', 'not json');
 const webForeign = web('GET', {}, 'https://evil.example');
 const webReset = web('POST', JSON.stringify({reset: true, enabled: true}));
 console.log(JSON.stringify({
-    requests, normal, raised, recovered, webSet, stopped, webBad, webForeign, webReset,
+    requests, normal, dark, raised, recovered, webSet, stopped, webBad, webForeign, webReset,
 }));
 """
     result = subprocess.run(
@@ -76,6 +82,10 @@ console.log(JSON.stringify({
         values = [metrics[key] for metrics in normal]
         assert low <= min(values) and max(values) <= high
         assert len(set(values)) > 10
+    lux = [metrics["illuminance_lux"] for metrics in normal]
+    assert 600 <= min(lux) and max(lux) <= 700  # default daylight lamp
+    assert output["dark"]["illuminance_lux"] < 10
+    assert requests["mqtt-lamp-build"]["url"] == "http://api:8000/api/v1/devices/room01/lamp"
     assert output["raised"]["metrics"]["co2_ppm"] > 1200
     assert output["recovered"]["metrics"]["co2_ppm"] <= 950
     # Web page endpoint: absolute offsets (clamped), start/stop, CORS only for configured origins.

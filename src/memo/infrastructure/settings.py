@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     # a proxy that injects its own) or answer "{}" in JSON mode; the prompt still asks for JSON.
     openai_system_role: bool = True
     openai_json_mode: bool = True
+    # Send uploaded images to the model; turn off for models without image input.
+    openai_vision: bool = True
 
 
 class AttentionSettings(BaseSettings):
@@ -56,3 +58,15 @@ class MqttSettings(BaseSettings):
     username: str | None = None
     password: str | None = None
     tls: bool = False
+
+
+class SearchSettings(BaseSettings):
+    """Self-hosted SearXNG for web look-ups; empty url means MEMO says search is not set up."""
+
+    model_config = SettingsConfigDict(env_prefix="SEARCH_", env_file=".env", extra="ignore")
+
+    url: str = ""
+    timeout_seconds: float = Field(default=6, gt=0, le=30)
+    max_results: int = Field(default=3, ge=1, le=5)
+    language: str = "zh-TW"
+    cache_seconds: int = Field(default=600, ge=0, le=86400)

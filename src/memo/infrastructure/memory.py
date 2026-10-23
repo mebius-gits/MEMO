@@ -7,11 +7,19 @@ from sqlalchemy.exc import IntegrityError
 from memo.domain.entities import Conflict, NotFound
 from memo.domain.environment import LEVELS, SUBJECTS
 from memo.domain.interaction import EventContext, Observation, Personality, Tone
+from memo.domain.memory import (
+    COMPRESS_AT,
+    EARLIER_EPISODES,
+    EPISODE_GAP,
+    is_empty,
+    trailing_episode,
+)
 from memo.infrastructure.database import (
     ConversationRow,
     DeviceRow,
     DeviceSettingRow,
     EventStateRow,
+    MemorySummaryRow,
     ReadingRow,
     ScheduledJobRow,
     TaskMemoryRow,
@@ -20,6 +28,13 @@ from memo.infrastructure.environment_events import (
     SCHEDULE_RULE,
     attention_context,
     current_task,
+)
+from memo.infrastructure.event_history import current_status
+from memo.infrastructure.memory_compression import (
+    latest_summary,
+    local_label,
+    stored_profile,
+    turns_after,
 )
 from memo.infrastructure.schedules import ScheduleRepository, job_description
 
@@ -82,6 +97,7 @@ class SqlMemoryRepository:
                     "temperature_c": latest.temperature_c,
                     "humidity_pct": latest.humidity_pct,
                     "co2_ppm": latest.co2_ppm,
+                    "illuminance_lux": latest.illuminance_lux,
                 },
                 latest.quality,
             )
@@ -112,12 +128,10 @@ class SqlMemoryRepository:
             if active
             else None
         )
-        history = []
-        for turn in self.history(device_id, session_id, 10):
-            history += [
-                {"role": "user", "content": turn["user_text"]},
-                {"role": "assistant", "content": turn["response"]["text"]},
-            ]
+        history, conversation_summary, earlier = self.conversation(
+            device_id, session_id, datetime.now(timezone.utc)
+        )
+        profile = self.profile(device_id, session_id)
         tasks = tuple(
             {
                 "id": t.id,
@@ -135,11 +149,74 @@ class SqlMemoryRepository:
         return dict(
             observation=observation,
             event=event,
-            history=tuple(history),
+            history=history,
+            conversation_summary=conversation_summary,
+            earlier=earlier,
+            profile=profile,
             task_memory=tasks,
             attention=attention,
             jobs=jobs,
         )
+
+    def conversation(self, device_id, session_id, now):
+        """What MEMO remembers of this conversation.
+
+        After a pause longer than EPISODE_GAP a new conversation starts with no verbatim
+        history. Within one, MEMO sees the latest turns as they were said, the running
+        summary of its older part, and short summaries of a few earlier conversations."""
+        last = latest_summary(self.session, device_id, session_id)
+        pending = turns_after(
+            self.session, device_id, session_id, last.last_turn_id if last else 0, limit=60
+        )
+        newest = pending[-1].at if pending else (last.ended_at if last else None)
+        recent, summary = [], None
+        if newest is not None and now - newest <= EPISODE_GAP:
+            episode = trailing_episode(pending)
+            recent = episode[-COMPRESS_AT:]
+            # The running summary belongs to this conversation only if nothing broke it off.
+            continues = (
+                last is not None
+                and last.kind == "running"
+                and (not episode or episode[0] == pending[0])
+                and (not episode or episode[0].at - last.ended_at <= EPISODE_GAP)
+            )
+            summary = last.summary if continues else None
+        rows = self.session.scalars(
+            select(MemorySummaryRow)
+            .where(
+                MemorySummaryRow.device_id == device_id,
+                MemorySummaryRow.session_id == session_id,
+                MemorySummaryRow.kind == "episode",
+            )
+            .order_by(MemorySummaryRow.last_turn_id.desc())
+            .limit(EARLIER_EPISODES)
+        ).all()
+        earlier = tuple(
+            {"when": local_label(row.ended_at, self.tz), "summary": row.summary}
+            for row in reversed(rows)
+        )
+        history = []
+        for turn in recent:
+            history += [
+                {"role": "user", "content": turn.user + ("（附了一張圖片）" if turn.image else "")},
+                {"role": "assistant", "content": turn.memo},
+            ]
+        return tuple(history), summary, earlier
+
+    def profile(self, device_id, session_id) -> dict | None:
+        """What the person said about themselves in this memory scope, or None."""
+        profile = stored_profile(self.session, device_id, session_id)
+        return None if is_empty(profile) else profile
+
+    def latest_profile(self, device_id) -> dict | None:
+        """The profile of the conversation most recently active on this device, for notices."""
+        scope = self.session.scalar(
+            select(ConversationRow.session_id)
+            .where(ConversationRow.device_id == device_id)
+            .order_by(ConversationRow.id.desc())
+            .limit(1)
+        )
+        return self.profile(device_id, scope) if scope else None
 
     def personality(self, device_id) -> Personality:
         row = self.session.get(DeviceSettingRow, device_id)
@@ -161,6 +238,23 @@ class SqlMemoryRepository:
             )
         elif row.personality != value:
             row.personality, row.updated_at = value, now
+        self.session.commit()
+
+    def preferences(self, device_id) -> dict:
+        self.require_device(device_id)
+        row = self.session.get(DeviceSettingRow, device_id)
+        return dict((row.preferences if row else None) or {})
+
+    def save_settings(self, device_id, personality: Personality, preferences: dict):
+        """Explicit settings; later chat messages still update the persona they use."""
+        self.require_device(device_id)
+        value = asdict(personality) | {"tone": personality.tone.value}
+        row = self.session.get(DeviceSettingRow, device_id)
+        now = datetime.now(timezone.utc)
+        if row is None:
+            row = DeviceSettingRow(device_id=device_id)
+            self.session.add(row)
+        row.personality, row.preferences, row.updated_at = value, preferences, now
         self.session.commit()
 
     def apply_action(self, device_id, action, session_id=None) -> str | None:
@@ -235,6 +329,12 @@ class SqlMemoryRepository:
                 ConversationRow.device_id == device_id, ConversationRow.session_id == session_id
             )
         )
+        # Summaries of a cleared conversation go too; the profile is kept (cleared on its own).
+        self.session.execute(
+            delete(MemorySummaryRow).where(
+                MemorySummaryRow.device_id == device_id, MemorySummaryRow.session_id == session_id
+            )
+        )
         self.session.commit()
 
     def events(self, device_id):
@@ -247,9 +347,7 @@ class SqlMemoryRepository:
             {
                 "rule_id": r.rule_id,
                 **{k: v for k, v in r.state.items() if k != "samples"},
-                "status": r.state.get("status")
-                if 0 <= now - r.state.get("last", 0) <= 30
-                else "unknown",
+                "status": current_status(r.rule_id, r.state, now),
             }
             for r in rows
         ]

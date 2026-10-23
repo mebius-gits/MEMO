@@ -12,6 +12,7 @@ LABELS = {
     "humidity_pct": ("濕度", "%"),
     "co2_ppm": ("CO₂", " ppm"),
     "feels_like_c": ("體感溫度", "°C"),
+    "illuminance_lux": ("亮度", " lux"),
 }
 
 
@@ -43,6 +44,24 @@ def followup_words(schedule) -> str:
     return f"你{action}之後，" + "、".join(parts) + "。"
 
 
+def search_words(search) -> str:
+    """One sentence from the first answer or result, naming where it came from."""
+    status = search.get("status")
+    if status == "not_configured":
+        return "我還沒接上搜尋服務，現在沒辦法幫你上網查。"
+    if status == "unavailable":
+        return "搜尋服務現在連不上，等一下再幫你查。"
+    if search.get("answers"):
+        return f"我查到：{search['answers'][0]}"
+    results = search.get("results") or []
+    if not results:
+        return f"我上網查了「{search['query']}」，但沒找到相關的資料。"
+    first = results[0]
+    text = f"我在 {first['source']} 查到：{first['snippet'] or first['title']}"
+    # Read aloud, so keep it to about one spoken sentence.
+    return text if len(text) <= 80 else text[:79] + "…"
+
+
 class TemplateReplyGenerator:
     """Deterministic preview; does not claim to understand arbitrary user intent."""
 
@@ -50,6 +69,12 @@ class TemplateReplyGenerator:
         tone = prepared.input.personality.tone
         request = prepared.input
         if request.context_source == "stored_readings":
+            if request.image:
+                return Reply(
+                    "我現在看不到這張圖片，可以用文字跟我說說看嗎？", EmotionLabel.CONFUSED, 0.4
+                )
+            if request.web_search is not None:
+                return Reply(search_words(request.web_search), EmotionLabel.FRIENDLY, 0.4)
             if request.actions_done and not request.proactive:
                 return Reply(
                     "好，" + "；".join(request.actions_done) + "。", EmotionLabel.HAPPY, 0.5

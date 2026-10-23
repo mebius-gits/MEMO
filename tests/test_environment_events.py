@@ -6,7 +6,7 @@ from sqlalchemy.orm import sessionmaker
 
 from memo.application.interaction import InteractionService
 from memo.domain.entities import Device, Reading
-from memo.domain.environment import RULES, advance
+from memo.domain.environment import RULES, RULES_BY_ID, advance
 from memo.infrastructure.database import Base, EventStateRow, TaskMemoryRow, build_engine
 from memo.infrastructure.notifications import dispatch_one
 from memo.infrastructure.repository import SqlAlchemyRepository
@@ -69,10 +69,27 @@ def test_trend_needs_covered_window_and_resets_after_gap():
     state, notice = advance(rule, state, 5, 1500, True)
     assert notice is None
     for t in range(10, 65, 5):
-        state, notice = advance(rule, state, t, 800 + 10 * t, True)
+        state, notice = advance(rule, state, t, 800 + 15 * t, True)
     assert state["live"]
     state, notice = advance(rule, state, 90, 1800, True)
     assert state["status"] == "unknown" and notice is None
+
+
+def test_trend_averages_window_ends_so_one_spike_is_not_a_trend():
+    rule = RULES_BY_ID["co2_rising"]
+    state, notices = {}, []
+    # Flat air with one odd high reading: the old endpoint difference would have fired.
+    for t in range(0, 120, 5):
+        value = 1400 if t == 100 else 800
+        state, notice = advance(rule, state, t, value, True)
+        notices += [notice] if notice else []
+    assert notices == []
+    temperature = RULES_BY_ID["temperature_rising"]
+    state = {}
+    for t in range(0, 300, 5):
+        state, _ = advance(temperature, state, t, 25 + t / 100, True)
+    # Mean of the last 30 s minus mean of the first 30 s, not the two endpoint readings.
+    assert abs(state["score"] - 2.65) < 0.01  # endpoints would give 2.95
 
 
 def test_full_scenario_transitions():

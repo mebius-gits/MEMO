@@ -1,6 +1,6 @@
 """Pure, event-time rules. Thresholds follow indoor-comfort guidance; not safety standards."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from uuid import uuid4
 
 LEVELS = ("caution", "warning", "danger")
@@ -9,6 +9,13 @@ LEVEL_LABELS = {"caution": "注意", "warning": "警戒", "danger": "危險"}
 REPEAT_SECONDS = {"caution": 1800, "warning": 900, "danger": 300}
 # Minimum gap before an escalation notice, so a value hovering on a boundary cannot flap.
 ESCALATION_GAP = 120
+# Without a valid sample for this long a metric is stale: holds break, live events turn unknown.
+STALE_SECONDS = 30
+# Device-level event for "no valid readings at all"; it recovers after a run of valid readings.
+SENSOR_RULE = "sensor_offline"
+RECOVERY_READINGS = 3
+# Staleness discovered much later (the backend itself was down) is recorded but not announced.
+ANNOUNCE_WITHIN = 90
 
 
 @dataclass(frozen=True)
@@ -25,6 +32,9 @@ class Rule:
     direction: str = "above"
     # (threshold, level) from mild to severe; the score reaching a threshold sets the level.
     levels: tuple[tuple[float, str], ...] = ()
+    # Trend rules compare the mean of the window's first and last `smooth` seconds, so a
+    # single odd reading at either end cannot fake a trend.
+    smooth: float = 0
 
 
 RULES = (
@@ -58,8 +68,8 @@ RULES = (
         180,
         levels=((70, "caution"), (80, "warning")),
     ),
-    Rule("co2_rising", "co2_ppm", 300, 100, 10, 30, window=60),
-    Rule("temperature_rising", "temperature_c", 2, 1, 10, 120, window=300),
+    Rule("co2_rising", "co2_ppm", 300, 100, 10, 30, window=60, smooth=10),
+    Rule("temperature_rising", "temperature_c", 2, 1, 10, 120, window=300, smooth=30),
     Rule(
         "humidity_low",
         "humidity_pct",
@@ -90,6 +100,18 @@ def level_of(rule: Rule, score: float) -> str:
         if (score <= threshold) if rule.direction == "below" else (score >= threshold):
             level = name
     return level
+
+
+def mean(values) -> float:
+    return sum(values) / len(values)
+
+
+def trend(samples, smooth: float) -> float:
+    """Mean of the newest `smooth` seconds minus mean of the oldest; endpoints when 0."""
+    first, last = samples[0][0], samples[-1][0]
+    old = [v for t, v in samples if t <= first + smooth]
+    new = [v for t, v in samples if t >= last - smooth]
+    return mean(new) - mean(old)
 
 
 def advance(
@@ -127,7 +149,7 @@ def advance(
         if len(samples) < 3 or timestamp - samples[0][0] < rule.window - rule.max_gap:
             state.update(status="unknown" if live else "normal", since=None)
             return state, None
-        score = value - samples[0][1]
+        score = trend(samples, rule.smooth)
     state["score"] = score
     if rule.window:
         high, low = score >= rule.trigger, score < rule.recovery
@@ -159,6 +181,106 @@ def advance(
     if rule.window:
         return state, notice
     return state, attend(rule, state, notice, timestamp, score)
+
+
+def expire(rule: Rule, previous: dict, now: float) -> dict:
+    """Wall-clock check between readings: a silent sensor breaks holds and windows, and a
+    live event becomes unknown (never resolved), so disconnection is not mistaken for
+    recovery. The next valid reading resumes through advance() as after any gap."""
+    state = dict(previous)
+    last = state.get("last")
+    if last is None or now - last <= STALE_SECONDS:
+        return state
+    if state.get("live"):
+        if state.get("status") != "unknown":
+            state.update(status="unknown", since=None, samples=[])
+    elif state.get("status") != "normal" or state.get("since") or state.get("samples"):
+        state.update(status="normal", since=None, samples=[])
+    return state
+
+
+def connectivity(previous: dict, timestamp: float, valid: bool) -> tuple[dict, str | None]:
+    """Device-level offline event, advanced by each live reading.
+
+    Recovery needs RECOVERY_READINGS valid readings in a row; an invalid one restarts the
+    count. Only an announced outage gets a "resolved" notice."""
+    state = dict(previous)
+    if not valid:
+        if state.get("live"):
+            state.update(status="active", valid_streak=0)
+        return state, None
+    if state.get("last") is not None and timestamp <= state["last"]:
+        return state, None
+    state["last"] = timestamp
+    if not state.get("live"):
+        state.update(status="normal", valid_streak=0)
+        return state, None
+    streak = state.get("valid_streak", 0) + 1
+    if streak < RECOVERY_READINGS:
+        state.update(status="recovering", valid_streak=streak)
+        return state, None
+    state.update(status="resolved", live=False, valid_streak=0)
+    return state, "resolved" if state.pop("announced", False) else None
+
+
+def connectivity_sweep(previous: dict, now: float) -> tuple[dict, str | None]:
+    """Wall-clock check: no valid reading for STALE_SECONDS opens the offline event."""
+    state = dict(previous)
+    last = state.get("last")
+    if last is None or now - last <= STALE_SECONDS:
+        return state, None
+    if state.get("live"):
+        if state.get("status") == "recovering":
+            state.update(status="active", valid_streak=0)
+        return state, None
+    announced = now - last <= ANNOUNCE_WITHIN
+    state.update(
+        status="active",
+        live=True,
+        event_id=uuid4().hex,
+        active_since=last,
+        valid_streak=0,
+        announced=announced,
+    )
+    return state, "active" if announced else None
+
+
+# What PUT /rules may change; metric, direction and trend window stay fixed per rule.
+EDITABLE = ("trigger", "recovery", "hold", "recover_hold", "levels")
+
+
+def configured(rule: Rule, override: dict | None) -> Rule:
+    """The rule with stored threshold overrides applied."""
+    if not override:
+        return rule
+    values = {key: override[key] for key in EDITABLE if key in override}
+    if "levels" in values:
+        values["levels"] = tuple((float(t), name) for t, name in values["levels"])
+    return replace(rule, **values)
+
+
+def rule_problem(rule: Rule) -> str | None:
+    """Why an edited rule is unusable, or None. Hysteresis must keep recovery on the safe side."""
+    if not (0 <= rule.hold <= 3600 and 0 <= rule.recover_hold <= 3600):
+        return "持續時間必須介於 0 到 3600 秒"
+    below = rule.direction == "below" and not rule.window
+    if (rule.recovery <= rule.trigger) if below else (rule.recovery >= rule.trigger):
+        return "恢復門檻必須" + ("高於" if below else "低於") + "觸發門檻，避免來回通知"
+    if rule.window:
+        return "趨勢規則沒有嚴重程度分級" if rule.levels else None
+    if not rule.levels:
+        return "至少需要一個嚴重程度"
+    names = [name for _, name in rule.levels]
+    if any(name not in LEVELS for name in names) or names != sorted(names, key=LEVELS.index):
+        return "嚴重程度需依 caution、warning、danger 排列且不重複"
+    if len(set(names)) != len(names):
+        return "嚴重程度不可重複"
+    limits = [threshold for threshold, _ in rule.levels]
+    if limits != sorted(limits, reverse=rule.direction == "below") or len(set(limits)) != len(
+        limits
+    ):
+        return "嚴重程度門檻必須" + ("遞減" if rule.direction == "below" else "遞增")
+    return None
 
 
 def attend(rule: Rule, state: dict, notice: str | None, timestamp: float, score: float):
@@ -206,6 +328,7 @@ SUBJECTS = {
     "humidity_high": "這裡的濕度偏高了一陣子",
     "humidity_low": "這裡的空氣偏乾了一陣子",
     "temperature_low": "這裡有點冷已經一陣子了",
+    SENSOR_RULE: "我已經一陣子收不到感測資料了，暫時看不到環境數值",
 }
 RECOVERED = {
     "co2_high": "二氧化碳已回到設定範圍，並穩定了一陣子",
@@ -215,6 +338,7 @@ RECOVERED = {
     "humidity_high": "濕度已回到舒適範圍，並穩定了一陣子",
     "humidity_low": "濕度已回到舒適範圍，並穩定了一陣子",
     "temperature_low": "溫度已回暖到舒適範圍，並穩定了一陣子",
+    SENSOR_RULE: "感測資料恢復了，已經連續收到新的讀值",
 }
 # Server-approved suggestions the model may use; nothing outside these is recommended.
 SUGGESTIONS = {
@@ -244,6 +368,12 @@ def event_words(
     level: str | None = None,
     minutes: int | None = None,
 ) -> str:
+    if rule_id == SENSOR_RULE and status != "resolved":
+        return {
+            "gentle": "我已經一陣子收不到感測資料了，暫時看不到環境。等資料回來，我再陪你留意。",
+            "lively": "欸，我收不到感測資料了！等它回來我再繼續幫你盯著。",
+            "concise": "感測資料中斷，暫時無法判斷環境。",
+        }[tone]
     if status == "resolved":
         recovered = RECOVERED[rule_id]
         return {

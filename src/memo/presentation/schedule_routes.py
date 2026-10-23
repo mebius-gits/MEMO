@@ -151,6 +151,7 @@ def digest(
             attention=context["attention"],
             jobs=context["jobs"],
             missed=missed,
+            profile=memory.latest_profile(device_id),
         ),
         datetime.now(timezone.utc),
     )

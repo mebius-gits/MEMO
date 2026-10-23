@@ -20,7 +20,9 @@ from memo.infrastructure.database import (
 from memo.infrastructure.environment_events import (
     NOTICE_TTL,
     SCHEDULE_RULE,
+    log_update,
     reading_metrics,
+    sweep_stale,
 )
 
 logger = logging.getLogger(__name__)
@@ -103,6 +105,15 @@ class ScheduleRepository:
         for row in rows:
             if row.state.get("live") and row.state.get("status") in ("active", "recovering"):
                 row.state = row.state | {"snoozed_until": now.timestamp() + minutes * 60}
+                log_update(
+                    self.session,
+                    device_id,
+                    row.rule_id,
+                    row.state,
+                    "snoozed",
+                    now,
+                    {"minutes": minutes, "via": "chat"},
+                )
                 snoozed.append(row.rule_id)
         return snoozed
 
@@ -206,9 +217,15 @@ def fire_due(sessions, now: datetime, tz: str) -> int:
 
 
 def run_scheduler(stop, sessions, tz):
+    """Every second: fire due jobs, and notice sensors that went silent between readings."""
     while not stop.is_set():
+        now = datetime.now(timezone.utc)
         try:
-            fire_due(sessions, datetime.now(timezone.utc), tz)
+            fire_due(sessions, now, tz)
         except Exception:
             logger.error("Scheduler pass failed; due jobs will be retried")
+        try:
+            sweep_stale(sessions, now)
+        except Exception:
+            logger.error("Stale sweep failed; it will run again")
         stop.wait(1)

@@ -48,6 +48,8 @@ class EventOutput(Schema):
     notified_level: Literal["caution", "warning", "danger"] | None = None
     reminders: int = 0
     snoozed_until: float = 0
+    acknowledged_at: float | None = None
+    rule_version: int | None = None
 
 
 class Acknowledged(Schema):

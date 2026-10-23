@@ -14,5 +14,5 @@ def to_reading(payload: TelemetryInput, received_at: datetime) -> Reading:
         received_at=received_at,
         sequence=payload.sequence,
         quality=payload.quality,
-        **payload.metrics.model_dump(),
+        **payload.metrics.usable(),
     )

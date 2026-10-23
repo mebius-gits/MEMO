@@ -1,8 +1,11 @@
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from memo.application.ports import Repository
 from memo.domain.entities import Device, NotFound, Reading
+
+METRICS = ("temperature_c", "humidity_pct", "co2_ppm", "illuminance_lux")
+EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
 class EnvironmentService:
@@ -41,3 +44,40 @@ class EnvironmentService:
     ) -> list[Reading]:
         self.get_device(device_id)
         return self.repository.list_readings(device_id, start, end, limit, offset)
+
+    def latest_state(self, device_id: str) -> dict[str, tuple[float, datetime] | None]:
+        """Each metric's newest valid value; metrics fail independently, so they may differ
+        in age."""
+        self.get_device(device_id)
+        return {metric: self.repository.latest_valid(device_id, metric) for metric in METRICS}
+
+    def summary(
+        self, device_id: str, start: datetime, end: datetime, bucket_seconds: int
+    ) -> list[dict]:
+        """Average, minimum and maximum of valid readings per time bucket; empty buckets are
+        left out rather than filled with zeros. Buckets align to UTC clock boundaries."""
+        self.get_device(device_id)
+        buckets: dict[int, dict[str, list[float]]] = {}
+        for reading in self.repository.valid_readings(device_id, start, end):
+            index = int((reading.observed_at - EPOCH).total_seconds() // bucket_seconds)
+            bucket = buckets.setdefault(index, {metric: [] for metric in METRICS})
+            for metric in METRICS:
+                if (value := getattr(reading, metric)) is not None:
+                    bucket[metric].append(value)
+        return [
+            {
+                "start": EPOCH + timedelta(seconds=index * bucket_seconds),
+                "count": max(len(values) for values in bucket.values()),
+                **{
+                    metric: {
+                        "avg": round(sum(values) / len(values), 2),
+                        "min": min(values),
+                        "max": max(values),
+                    }
+                    if values
+                    else None
+                    for metric, values in bucket.items()
+                },
+            }
+            for index, bucket in sorted(buckets.items())
+        ]

@@ -1,7 +1,10 @@
+import base64
+import binascii
+import re
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
-from pydantic import AwareDatetime, Field
+from pydantic import AwareDatetime, Field, field_validator
 
 from memo.domain.interaction import EmotionLabel, Tone
 from memo.presentation.schemas import Identifier, Metrics, Schema
@@ -65,16 +68,58 @@ class EmotionOutput(Schema):
     intensity: float = Field(ge=0, le=1, allow_inf_nan=False, description="表情強度，0 到 1。")
 
 
+IMAGE_MAX_BYTES = 2 * 1024 * 1024
+_IMAGE_URL = re.compile(r"^data:image/(jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$")
+
+
+def image_problem(value: str) -> str | None:
+    """Why a data URL is not an acceptable image, or None. The bytes must match the type."""
+    match = _IMAGE_URL.match(value)
+    if not match:
+        return "image 必須是 JPEG、PNG 或 WebP 的 base64 data URL"
+    try:
+        data = base64.b64decode(match[2], validate=True)
+    except (binascii.Error, ValueError):
+        return "image 的 base64 內容無效"
+    if len(data) > IMAGE_MAX_BYTES:
+        return "圖片不可超過 2 MB"
+    signature = {
+        "jpeg": data.startswith(bytes.fromhex("ffd8ff")),
+        "png": data.startswith(bytes.fromhex("89504e470d0a1a0a")),
+        "webp": data[:4] == b"RIFF" and data[8:12] == b"WEBP",
+    }[match[1]]
+    return None if signature else "圖片內容與宣告的格式不符"
+
+
 class DeviceInteractionRequest(Schema):
     session_id: Identifier = "default"
     request_id: UUID = Field(default_factory=uuid4)
     user_message: str = Field(min_length=1, max_length=2000)
     personality: PersonalityConfig = Field(default_factory=PersonalityConfig)
+    image: str | None = Field(
+        default=None,
+        max_length=2_800_100,
+        description="使用者上傳的一張圖片，data:image/jpeg|png|webp;base64,...，最大 2 MB；"
+        "只交給模型看，不保存。",
+    )
+
+    @field_validator("image")
+    @classmethod
+    def check_image(cls, value):
+        if value is not None and (problem := image_problem(value)):
+            raise ValueError(problem)
+        return value
 
 
 class ModelReply(Schema):
     text: str = Field(min_length=1, max_length=2000, description="顯示給使用者的繁體中文文字。")
     emotion: EmotionOutput
+
+
+class WebSource(Schema):
+    title: str
+    url: str
+    source: str = Field(description="網站名稱（網域）")
 
 
 class InteractionResponse(ModelReply):
@@ -83,7 +128,11 @@ class InteractionResponse(ModelReply):
     source: Literal["template", "model"] = "template"
     fallback_reason: (
         Literal[
-            "model_not_configured", "model_timeout", "model_unavailable", "invalid_model_output"
+            "model_not_configured",
+            "model_timeout",
+            "model_unavailable",
+            "invalid_model_output",
+            "vision_unavailable",
         ]
         | None
     ) = "model_not_configured"
@@ -101,6 +150,10 @@ class InteractionResponse(ModelReply):
     actions: list[str] = Field(
         default_factory=list,
         description="後端為這則訊息完成的動作（設定提醒、延後、取消等），以中文描述。",
+    )
+    image_attached: bool = Field(default=False, description="這則訊息附了圖片（圖片本身不保存）")
+    sources: list[WebSource] = Field(
+        default_factory=list, description="這則回覆參考的網路搜尋結果（SearXNG），供網頁顯示來源。"
     )
 
 

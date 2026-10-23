@@ -1,0 +1,23 @@
+# SearXNG for MEMO: a private metasearch that only the MEMO API calls (JSON results).
+# Everything not set here keeps SearXNG's defaults. The secret comes from SEARXNG_SECRET.
+use_default_settings: true
+
+general:
+  instance_name: "MEMO search"
+
+search:
+  safe_search: 1
+  default_lang: "zh-TW"
+  # MEMO reads results as JSON; html keeps the web UI usable for debugging.
+  formats:
+    - html
+    - json
+
+server:
+  # Overridden by the SEARXNG_SECRET environment variable.
+  secret_key: "memo-local-only-change-me"
+  # Bound to localhost and called only by the API, so the bot limiter (which needs
+  # Valkey) stays off.
+  limiter: false
+  public_instance: false
+  image_proxy: false

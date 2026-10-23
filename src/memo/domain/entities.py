@@ -28,3 +28,5 @@ class Reading:
     humidity_pct: float | None
     co2_ppm: float | None
     quality: str
+    # Light sensor; optional, so devices without one send nothing.
+    illuminance_lux: float | None = None

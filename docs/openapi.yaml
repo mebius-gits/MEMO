@@ -111,7 +111,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ReadingOutput'
+                $ref: '#/components/schemas/TelemetryAccepted'
         '422':
           description: Validation Error
           content:
@@ -176,6 +176,91 @@ paths:
                 items:
                   $ref: '#/components/schemas/ReadingOutput'
                 title: Response History Api V1 Devices  Device Id  Readings Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/state:
+    get:
+      tags:
+      - telemetry
+      summary: Latest State
+      description: 每個指標各自最新的有效值與新鮮度；指標可能來自不同時間的讀值。
+      operationId: latest_state_api_v1_devices__device_id__state_get
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceState'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/readings/summary:
+    get:
+      tags:
+      - telemetry
+      summary: Summary
+      description: 依時間區間彙總有效讀值（平均、最小、最大）；預設最近一小時、每分鐘一格，沒資料的格子不列出。
+      operationId: summary_api_v1_devices__device_id__readings_summary_get
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      - name: start
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Start
+      - name: end
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: End
+      - name: bucket_seconds
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 86400
+          minimum: 10
+          default: 60
+          title: Bucket Seconds
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ReadingBucket'
+                title: Response Summary Api V1 Devices  Device Id  Readings Summary
+                  Get
         '422':
           description: Validation Error
           content:
@@ -357,6 +442,157 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/memory/profile:
+    get:
+      tags:
+      - MEMO memory and events
+      summary: Profile
+      description: MEMO 記得關於使用者的事（長期記憶），由背景的記憶壓縮從對話中整理。
+      operationId: profile_api_v1_devices__device_id__memory_profile_get
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      - name: session_id
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: ^[a-zA-Z0-9_-]+$
+          default: default
+          title: Session Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileOutput'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - MEMO memory and events
+      summary: Correct Profile
+      description: 更正長期記憶；敏感內容（電話、地址、密碼等）一律不保存。
+      operationId: correct_profile_api_v1_devices__device_id__memory_profile_put
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      - name: session_id
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: ^[a-zA-Z0-9_-]+$
+          default: default
+          title: Session Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Profile'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileOutput'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - MEMO memory and events
+      summary: Forget Profile
+      operationId: forget_profile_api_v1_devices__device_id__memory_profile_delete
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      - name: session_id
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: ^[a-zA-Z0-9_-]+$
+          default: default
+          title: Session Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/memory/summaries:
+    get:
+      tags:
+      - MEMO memory and events
+      summary: Summaries
+      description: 壓縮後的對話記憶，舊到新。
+      operationId: summaries_api_v1_devices__device_id__memory_summaries_get
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      - name: session_id
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: ^[a-zA-Z0-9_-]+$
+          default: default
+          title: Session Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SummaryOutput'
+                title: Response Summaries Api V1 Devices  Device Id  Memory Summaries
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/devices/{device_id}/memory/tasks:
     get:
       tags:
@@ -401,6 +637,8 @@ paths:
       tags:
       - MEMO memory and events
       summary: Events
+      description: Each rule's current state (and the device-level sensor_offline
+        row).
       operationId: events_api_v1_devices__device_id__events_get
       parameters:
       - name: device_id
@@ -647,6 +885,388 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/events/history:
+    get:
+      tags:
+      - MEMO events, rules and settings
+      summary: Event History
+      description: 最近的事件（新到舊），由事件更新紀錄彙總。
+      operationId: event_history_api_v1_devices__device_id__events_history_get
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EventSummary'
+                title: Response Event History Api V1 Devices  Device Id  Events History
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/events/{event_id}:
+    get:
+      tags:
+      - MEMO events, rules and settings
+      summary: Event Detail
+      description: 事件的證據與每一次變化：通知、升級、資料中斷、使用者確認／延後／處理。
+      operationId: event_detail_api_v1_devices__device_id__events__event_id__get
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      - name: event_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Event Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventDetail'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/events/{event_id}/ack:
+    post:
+      tags:
+      - MEMO events, rules and settings
+      summary: Acknowledge Event
+      description: 使用者已知道：取消尚未送出的提醒，同等級的重複提醒延後一個間隔；等級升高仍會提醒。
+      operationId: acknowledge_event_api_v1_devices__device_id__events__event_id__ack_post
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      - name: event_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Event Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventDetail'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/events/{event_id}/snooze:
+    post:
+      tags:
+      - MEMO events, rules and settings
+      summary: Snooze Event
+      description: 延後重複提醒；仍持續觀察，等級升高照樣提醒。
+      operationId: snooze_event_api_v1_devices__device_id__events__event_id__snooze_post
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      - name: event_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Event Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SnoozeRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventDetail'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/events/{event_id}/handled:
+    post:
+      tags:
+      - MEMO events, rules and settings
+      summary: Handled Event
+      description: 記錄使用者自述已處理，並排程在指定分鐘後比較前後數值回報。
+      operationId: handled_event_api_v1_devices__device_id__events__event_id__handled_post
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      - name: event_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Event Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HandledRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HandledOutput'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/rules:
+    get:
+      tags:
+      - MEMO events, rules and settings
+      summary: List Rules
+      description: 所有規則目前的門檻、版本與預設值；所有裝置共用。
+      operationId: list_rules_api_v1_rules_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/RuleOutput'
+                type: array
+                title: Response List Rules Api V1 Rules Get
+  /api/v1/rules/{rule_id}:
+    get:
+      tags:
+      - MEMO events, rules and settings
+      summary: Get Rule
+      operationId: get_rule_api_v1_rules__rule_id__get
+      parameters:
+      - name: rule_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Rule Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuleOutput'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - MEMO events, rules and settings
+      summary: Update Rule
+      description: '更新門檻並遞增版本，API 與 worker 下一筆讀值即生效（不需重啟）。
+
+
+        未確認的持續時間與趨勢窗口重新計算；進行中的事件保留原本的規則版本。
+
+        停用規則會靜默結束進行中的事件。要還原預設值，把 `defaults` 原樣送回。'
+      operationId: update_rule_api_v1_rules__rule_id__put
+      parameters:
+      - name: rule_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Rule Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuleUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuleOutput'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/settings:
+    get:
+      tags:
+      - MEMO events, rules and settings
+      summary: Get Settings
+      description: 人格、勿擾時段與每小時提醒上限。人格也會被最後一次對話使用的人格更新。
+      operationId: get_settings_api_v1_devices__device_id__settings_get
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceSettingsOutput'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - MEMO events, rules and settings
+      summary: Put Settings
+      description: API 與 worker 下一次判斷即採用，不需重啟。
+      operationId: put_settings_api_v1_devices__device_id__settings_put
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceSettings'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceSettingsOutput'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/lamp:
+    get:
+      tags:
+      - MEMO lamp
+      summary: Get Lamp
+      description: 檯燈目前的模式：off 關燈、dim 暗光、warm 溫暖光、day 白天光（預設）。
+      operationId: get_lamp_api_v1_devices__device_id__lamp_get
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LampOutput'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - MEMO lamp
+      summary: Set Lamp
+      description: 切換模式；也接受 on（回到上次的亮燈模式）、brighter、dimmer。
+      operationId: set_lamp_api_v1_devices__device_id__lamp_put
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LampChange'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LampOutput'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /health/live:
     get:
       tags:
@@ -738,6 +1358,13 @@ components:
           title: User Message
         personality:
           $ref: '#/components/schemas/PersonalityConfig'
+        image:
+          anyOf:
+          - type: string
+            maxLength: 2800100
+          - type: 'null'
+          title: Image
+          description: 使用者上傳的一張圖片，data:image/jpeg|png|webp;base64,...，最大 2 MB；只交給模型看，不保存。
       additionalProperties: false
       type: object
       required:
@@ -767,6 +1394,104 @@ components:
       - id
       - name
       title: DeviceSchema
+    DeviceSettings:
+      properties:
+        personality:
+          $ref: '#/components/schemas/PersonalityConfig'
+          default:
+            name: MEMO
+            language: zh-TW
+            tone: gentle
+            persona: ''
+        quiet_hours:
+          anyOf:
+          - type: string
+            pattern: ^$|^([01]?\d|2[0-3]):[0-5]\d\s*-\s*([01]?\d|2[0-3]):[0-5]\d$
+          - type: 'null'
+          title: Quiet Hours
+          description: 勿擾時段 HH:MM-HH:MM（台北時間，可跨午夜）；空字串表示不設，null 沿用伺服器預設
+          examples:
+          - 23:00-07:00
+        max_proactive_per_hour:
+          anyOf:
+          - type: integer
+            maximum: 60.0
+            minimum: 1.0
+          - type: 'null'
+          title: Max Proactive Per Hour
+          description: 每小時主動環境提醒上限；null 沿用伺服器預設
+      additionalProperties: false
+      type: object
+      title: DeviceSettings
+    DeviceSettingsOutput:
+      properties:
+        personality:
+          $ref: '#/components/schemas/PersonalityConfig'
+          default:
+            name: MEMO
+            language: zh-TW
+            tone: gentle
+            persona: ''
+        quiet_hours:
+          anyOf:
+          - type: string
+            pattern: ^$|^([01]?\d|2[0-3]):[0-5]\d\s*-\s*([01]?\d|2[0-3]):[0-5]\d$
+          - type: 'null'
+          title: Quiet Hours
+          description: 勿擾時段 HH:MM-HH:MM（台北時間，可跨午夜）；空字串表示不設，null 沿用伺服器預設
+          examples:
+          - 23:00-07:00
+        max_proactive_per_hour:
+          anyOf:
+          - type: integer
+            maximum: 60.0
+            minimum: 1.0
+          - type: 'null'
+          title: Max Proactive Per Hour
+          description: 每小時主動環境提醒上限；null 沿用伺服器預設
+        effective:
+          $ref: '#/components/schemas/EffectiveSettings'
+          description: 實際生效的值（裝置設定優先，否則用伺服器預設）
+      additionalProperties: false
+      type: object
+      required:
+      - effective
+      title: DeviceSettingsOutput
+    DeviceState:
+      properties:
+        device_id:
+          type: string
+          title: Device Id
+        checked_at:
+          type: string
+          format: date-time
+          title: Checked At
+        online:
+          type: boolean
+          title: Online
+          description: 任一指標在 30 秒內有有效值
+        metrics:
+          additionalProperties:
+            anyOf:
+            - $ref: '#/components/schemas/MetricState'
+            - type: 'null'
+          type: object
+          title: Metrics
+        feels_like_c:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Feels Like C
+          description: 由新鮮的溫度（與濕度）計算；溫度不新鮮時為 null
+      additionalProperties: false
+      type: object
+      required:
+      - device_id
+      - checked_at
+      - online
+      - metrics
+      - feels_like_c
+      title: DeviceState
     DigestOutput:
       properties:
         text:
@@ -807,6 +1532,24 @@ components:
       required:
       - since
       title: DigestRequest
+    EffectiveSettings:
+      properties:
+        timezone:
+          type: string
+          title: Timezone
+        quiet_hours:
+          type: string
+          title: Quiet Hours
+        max_proactive_per_hour:
+          type: integer
+          title: Max Proactive Per Hour
+      additionalProperties: false
+      type: object
+      required:
+      - timezone
+      - quiet_hours
+      - max_proactive_per_hour
+      title: EffectiveSettings
     EmotionLabel:
       type: string
       enum:
@@ -837,6 +1580,80 @@ components:
       - label
       - intensity
       title: EmotionOutput
+    EventDetail:
+      properties:
+        event_id:
+          type: string
+          title: Event Id
+        rule_id:
+          type: string
+          title: Rule Id
+        status:
+          type: string
+          enum:
+          - normal
+          - pending
+          - active
+          - recovering
+          - resolved
+          - unknown
+          - superseded
+          title: Status
+        started_at:
+          type: string
+          format: date-time
+          title: Started At
+        ended_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Ended At
+        peak_level:
+          anyOf:
+          - type: string
+            enum:
+            - caution
+            - warning
+            - danger
+          - type: 'null'
+          title: Peak Level
+        rule_version:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Rule Version
+          description: 事件開始時採用的規則版本
+        last_update:
+          type: string
+          title: Last Update
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+        update_count:
+          type: integer
+          title: Update Count
+        updates:
+          items:
+            $ref: '#/components/schemas/EventUpdate'
+          type: array
+          title: Updates
+      additionalProperties: false
+      type: object
+      required:
+      - event_id
+      - rule_id
+      - status
+      - started_at
+      - ended_at
+      - peak_level
+      - rule_version
+      - last_update
+      - updated_at
+      - update_count
+      - updates
+      title: EventDetail
     EventInput:
       properties:
         event_id:
@@ -948,6 +1765,16 @@ components:
           type: number
           title: Snoozed Until
           default: 0
+        acknowledged_at:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Acknowledged At
+        rule_version:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Rule Version
       additionalProperties: false
       type: object
       required:
@@ -955,6 +1782,118 @@ components:
       - status
       - last
       title: EventOutput
+    EventSummary:
+      properties:
+        event_id:
+          type: string
+          title: Event Id
+        rule_id:
+          type: string
+          title: Rule Id
+        status:
+          type: string
+          enum:
+          - normal
+          - pending
+          - active
+          - recovering
+          - resolved
+          - unknown
+          - superseded
+          title: Status
+        started_at:
+          type: string
+          format: date-time
+          title: Started At
+        ended_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Ended At
+        peak_level:
+          anyOf:
+          - type: string
+            enum:
+            - caution
+            - warning
+            - danger
+          - type: 'null'
+          title: Peak Level
+        rule_version:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Rule Version
+          description: 事件開始時採用的規則版本
+        last_update:
+          type: string
+          title: Last Update
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+        update_count:
+          type: integer
+          title: Update Count
+      additionalProperties: false
+      type: object
+      required:
+      - event_id
+      - rule_id
+      - status
+      - started_at
+      - ended_at
+      - peak_level
+      - rule_version
+      - last_update
+      - updated_at
+      - update_count
+      title: EventSummary
+    EventUpdate:
+      properties:
+        kind:
+          type: string
+          title: Kind
+          description: active / escalated / reminder / resolved / unknown / acknowledged
+            / snoozed / handled / rule_changed / rule_disabled
+        event_version:
+          type: integer
+          title: Event Version
+        level:
+          anyOf:
+          - type: string
+            enum:
+            - caution
+            - warning
+            - danger
+          - type: 'null'
+          title: Level
+        value:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Value
+        detail:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Detail
+        at:
+          type: string
+          format: date-time
+          title: At
+      additionalProperties: false
+      type: object
+      required:
+      - kind
+      - event_version
+      - level
+      - value
+      - detail
+      - at
+      title: EventUpdate
     HTTPValidationError:
       properties:
         detail:
@@ -964,6 +1903,40 @@ components:
           title: Detail
       type: object
       title: HTTPValidationError
+    HandledOutput:
+      properties:
+        event:
+          $ref: '#/components/schemas/EventDetail'
+        followup:
+          $ref: '#/components/schemas/JobOutput'
+      additionalProperties: false
+      type: object
+      required:
+      - event
+      - followup
+      title: HandledOutput
+    HandledRequest:
+      properties:
+        message:
+          type: string
+          maxLength: 60
+          minLength: 1
+          title: Message
+          description: 使用者自述做了什麼；不是系統確認
+          examples:
+          - 我開窗了
+        minutes:
+          type: integer
+          maximum: 120.0
+          minimum: 1.0
+          title: Minutes
+          description: 幾分鐘後用新資料回報有沒有改善
+          default: 5
+      additionalProperties: false
+      type: object
+      required:
+      - message
+      title: HandledRequest
     HistoryMessage:
       properties:
         role:
@@ -1077,6 +2050,7 @@ components:
             - model_timeout
             - model_unavailable
             - invalid_model_output
+            - vision_unavailable
           - type: 'null'
           title: Fallback Reason
           default: model_not_configured
@@ -1113,6 +2087,17 @@ components:
           type: array
           title: Actions
           description: 後端為這則訊息完成的動作（設定提醒、延後、取消等），以中文描述。
+        image_attached:
+          type: boolean
+          title: Image Attached
+          description: 這則訊息附了圖片（圖片本身不保存）
+          default: false
+        sources:
+          items:
+            $ref: '#/components/schemas/WebSource'
+          type: array
+          title: Sources
+          description: 這則回覆參考的網路搜尋結果（SearXNG），供網頁顯示來源。
       additionalProperties: false
       type: object
       required:
@@ -1193,29 +2178,149 @@ components:
       - description
       - created_at
       title: JobOutput
+    LampChange:
+      properties:
+        mode:
+          type: string
+          enum:
+          - 'off'
+          - dim
+          - warm
+          - day
+          - 'on'
+          - brighter
+          - dimmer
+          title: Mode
+      additionalProperties: false
+      type: object
+      required:
+      - mode
+      title: LampChange
+    LampOutput:
+      properties:
+        mode:
+          type: string
+          enum:
+          - 'off'
+          - dim
+          - warm
+          - day
+          title: Mode
+        label:
+          type: string
+          title: Label
+        last_on:
+          anyOf:
+          - type: string
+            enum:
+            - 'off'
+            - dim
+            - warm
+            - day
+          - type: 'null'
+          title: Last On
+        changed_by:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Changed By
+        updated_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Updated At
+      additionalProperties: false
+      type: object
+      required:
+      - mode
+      - label
+      - last_on
+      - changed_by
+      - updated_at
+      title: LampOutput
+    LevelThreshold:
+      properties:
+        threshold:
+          type: number
+          title: Threshold
+        level:
+          type: string
+          enum:
+          - caution
+          - warning
+          - danger
+          title: Level
+      additionalProperties: false
+      type: object
+      required:
+      - threshold
+      - level
+      title: LevelThreshold
+    MetricState:
+      properties:
+        value:
+          type: number
+          title: Value
+        observed_at:
+          type: string
+          format: date-time
+          title: Observed At
+        age_seconds:
+          type: number
+          title: Age Seconds
+        fresh:
+          type: boolean
+          title: Fresh
+          description: 30 秒內的有效值；過期的值只供參考，不代表目前環境
+      additionalProperties: false
+      type: object
+      required:
+      - value
+      - observed_at
+      - age_seconds
+      - fresh
+      title: MetricState
+    MetricStats:
+      properties:
+        avg:
+          type: number
+          title: Avg
+        min:
+          type: number
+          title: Min
+        max:
+          type: number
+          title: Max
+      additionalProperties: false
+      type: object
+      required:
+      - avg
+      - min
+      - max
+      title: MetricStats
     Metrics:
       properties:
         temperature_c:
           anyOf:
           - type: number
-            maximum: 100.0
-            minimum: -80.0
           - type: 'null'
           title: Temperature C
         humidity_pct:
           anyOf:
           - type: number
-            maximum: 100.0
-            minimum: 0.0
           - type: 'null'
           title: Humidity Pct
         co2_ppm:
           anyOf:
           - type: number
-            maximum: 100000.0
-            minimum: 0.0
           - type: 'null'
           title: Co2 Ppm
+        illuminance_lux:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Illuminance Lux
       additionalProperties: false
       type: object
       title: Metrics
@@ -1330,6 +2435,131 @@ components:
       - output_schema
       - warnings
       title: PreparedResponse
+    Profile:
+      properties:
+        name:
+          anyOf:
+          - type: string
+            maxLength: 20
+          - type: 'null'
+          title: Name
+          description: 怎麼稱呼使用者
+        preferences:
+          items:
+            type: string
+            maxLength: 40
+            minLength: 1
+          type: array
+          maxItems: 8
+          title: Preferences
+          description: 喜好與習慣
+          default: []
+        projects:
+          items:
+            type: string
+            maxLength: 40
+            minLength: 1
+          type: array
+          maxItems: 8
+          title: Projects
+          description: 正在做的作品或事情
+          default: []
+        other:
+          items:
+            type: string
+            maxLength: 40
+            minLength: 1
+          type: array
+          maxItems: 8
+          title: Other
+          description: 其他值得記得的事
+          default: []
+      additionalProperties: false
+      type: object
+      title: Profile
+    ProfileOutput:
+      properties:
+        name:
+          anyOf:
+          - type: string
+            maxLength: 20
+          - type: 'null'
+          title: Name
+          description: 怎麼稱呼使用者
+        preferences:
+          items:
+            type: string
+            maxLength: 40
+            minLength: 1
+          type: array
+          maxItems: 8
+          title: Preferences
+          description: 喜好與習慣
+          default: []
+        projects:
+          items:
+            type: string
+            maxLength: 40
+            minLength: 1
+          type: array
+          maxItems: 8
+          title: Projects
+          description: 正在做的作品或事情
+          default: []
+        other:
+          items:
+            type: string
+            maxLength: 40
+            minLength: 1
+          type: array
+          maxItems: 8
+          title: Other
+          description: 其他值得記得的事
+          default: []
+        updated_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Updated At
+      additionalProperties: false
+      type: object
+      title: ProfileOutput
+    ReadingBucket:
+      properties:
+        start:
+          type: string
+          format: date-time
+          title: Start
+        count:
+          type: integer
+          title: Count
+        temperature_c:
+          anyOf:
+          - $ref: '#/components/schemas/MetricStats'
+          - type: 'null'
+        humidity_pct:
+          anyOf:
+          - $ref: '#/components/schemas/MetricStats'
+          - type: 'null'
+        co2_ppm:
+          anyOf:
+          - $ref: '#/components/schemas/MetricStats'
+          - type: 'null'
+        illuminance_lux:
+          anyOf:
+          - $ref: '#/components/schemas/MetricStats'
+          - type: 'null'
+      additionalProperties: false
+      type: object
+      required:
+      - start
+      - count
+      - temperature_c
+      - humidity_pct
+      - co2_ppm
+      - illuminance_lux
+      title: ReadingBucket
     ReadingOutput:
       properties:
         message_id:
@@ -1367,6 +2597,11 @@ components:
         quality:
           type: string
           title: Quality
+        illuminance_lux:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Illuminance Lux
       additionalProperties: false
       type: object
       required:
@@ -1380,6 +2615,153 @@ components:
       - co2_ppm
       - quality
       title: ReadingOutput
+    RuleOutput:
+      properties:
+        trigger:
+          type: number
+          title: Trigger
+        recovery:
+          type: number
+          title: Recovery
+        hold_seconds:
+          type: number
+          maximum: 3600.0
+          minimum: 0.0
+          title: Hold Seconds
+        recover_hold_seconds:
+          type: number
+          maximum: 3600.0
+          minimum: 0.0
+          title: Recover Hold Seconds
+        levels:
+          items:
+            $ref: '#/components/schemas/LevelThreshold'
+          type: array
+          maxItems: 3
+          title: Levels
+          default: []
+        id:
+          type: string
+          title: Id
+        metric:
+          type: string
+          title: Metric
+        direction:
+          type: string
+          enum:
+          - above
+          - below
+          - rising
+          title: Direction
+        window_seconds:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Window Seconds
+        enabled:
+          type: boolean
+          title: Enabled
+        version:
+          type: integer
+          title: Version
+        customized:
+          type: boolean
+          title: Customized
+        updated_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Updated At
+        defaults:
+          $ref: '#/components/schemas/RuleThresholds'
+      additionalProperties: false
+      type: object
+      required:
+      - trigger
+      - recovery
+      - hold_seconds
+      - recover_hold_seconds
+      - id
+      - metric
+      - direction
+      - window_seconds
+      - enabled
+      - version
+      - customized
+      - updated_at
+      - defaults
+      title: RuleOutput
+    RuleThresholds:
+      properties:
+        trigger:
+          type: number
+          title: Trigger
+        recovery:
+          type: number
+          title: Recovery
+        hold_seconds:
+          type: number
+          maximum: 3600.0
+          minimum: 0.0
+          title: Hold Seconds
+        recover_hold_seconds:
+          type: number
+          maximum: 3600.0
+          minimum: 0.0
+          title: Recover Hold Seconds
+        levels:
+          items:
+            $ref: '#/components/schemas/LevelThreshold'
+          type: array
+          maxItems: 3
+          title: Levels
+          default: []
+      additionalProperties: false
+      type: object
+      required:
+      - trigger
+      - recovery
+      - hold_seconds
+      - recover_hold_seconds
+      title: RuleThresholds
+    RuleUpdate:
+      properties:
+        trigger:
+          type: number
+          title: Trigger
+        recovery:
+          type: number
+          title: Recovery
+        hold_seconds:
+          type: number
+          maximum: 3600.0
+          minimum: 0.0
+          title: Hold Seconds
+        recover_hold_seconds:
+          type: number
+          maximum: 3600.0
+          minimum: 0.0
+          title: Recover Hold Seconds
+        levels:
+          items:
+            $ref: '#/components/schemas/LevelThreshold'
+          type: array
+          maxItems: 3
+          title: Levels
+          default: []
+        enabled:
+          type: boolean
+          title: Enabled
+          default: true
+      additionalProperties: false
+      type: object
+      required:
+      - trigger
+      - recovery
+      - hold_seconds
+      - recover_hold_seconds
+      title: RuleUpdate
     ScheduleCreate:
       properties:
         kind:
@@ -1437,6 +2819,43 @@ components:
       required:
       - status
       title: ScheduleUpdate
+    SnoozeRequest:
+      properties:
+        minutes:
+          type: integer
+          maximum: 240.0
+          minimum: 5.0
+          title: Minutes
+      additionalProperties: false
+      type: object
+      required:
+      - minutes
+      title: SnoozeRequest
+    SummaryOutput:
+      properties:
+        kind:
+          type: string
+          title: Kind
+          description: running：這次對話較早部分；episode：已結束的一次對話
+        started_at:
+          type: string
+          format: date-time
+          title: Started At
+        ended_at:
+          type: string
+          format: date-time
+          title: Ended At
+        summary:
+          type: string
+          title: Summary
+      additionalProperties: false
+      type: object
+      required:
+      - kind
+      - started_at
+      - ended_at
+      - summary
+      title: SummaryOutput
     TaskOutput:
       properties:
         id:
@@ -1497,6 +2916,68 @@ components:
       - expires_at
       - response
       title: TaskOutput
+    TelemetryAccepted:
+      properties:
+        message_id:
+          type: string
+          title: Message Id
+        device_id:
+          type: string
+          title: Device Id
+        observed_at:
+          type: string
+          format: date-time
+          title: Observed At
+        received_at:
+          type: string
+          format: date-time
+          title: Received At
+        sequence:
+          type: integer
+          title: Sequence
+        temperature_c:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Temperature C
+        humidity_pct:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Humidity Pct
+        co2_ppm:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Co2 Ppm
+        quality:
+          type: string
+          title: Quality
+        illuminance_lux:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Illuminance Lux
+        rejected_metrics:
+          items:
+            type: string
+          type: array
+          title: Rejected Metrics
+          description: 超出合理範圍而未保存（記為缺值）的指標；其他指標照常保存
+          default: []
+      additionalProperties: false
+      type: object
+      required:
+      - message_id
+      - device_id
+      - observed_at
+      - received_at
+      - sequence
+      - temperature_c
+      - humidity_pct
+      - co2_ppm
+      - quality
+      title: TelemetryAccepted
     TelemetryInput:
       properties:
         schema_version:
@@ -1576,3 +3057,22 @@ components:
       - msg
       - type
       title: ValidationError
+    WebSource:
+      properties:
+        title:
+          type: string
+          title: Title
+        url:
+          type: string
+          title: Url
+        source:
+          type: string
+          title: Source
+          description: 網站名稱（網域）
+      additionalProperties: false
+      type: object
+      required:
+      - title
+      - url
+      - source
+      title: WebSource
