@@ -16,6 +16,8 @@ MEMO 從感測輸入到主動說話的完整架構（規則、嚴重程度、排
 
 Compose 另含本機語音服務 `speech`（http://localhost:8001），在 CPU 上執行，不需 GPU，詳見 [語音服務說明](speech/README.md)。
 
+Compose 也含自架的 SearXNG 搜尋（`searxng`，http://localhost:8080），免費、免金鑰，讓 MEMO 能回答「查一下明天台北天氣」這類問題；只有 API 會呼叫它，只送出搜尋關鍵字。設定在 [searxng/settings.yml](searxng/settings.yml)。網頁的 MEMO 旁邊有一盞小檯燈，可在側欄切換關燈、暗光、溫暖光、白天光。MEMO 不知道燈的模式，也不會控制它，只透過光照感測（`illuminance_lux`）感覺空間多亮多暗；示範時由 Node-RED 依檯燈模擬這個讀值。對話時可以上傳或貼上一張圖片給 MEMO 看（見第 4.6 節），圖片不會被保存。詳見 [LLM 架構](docs/llm-architecture.md) 第 4.4、4.5 節。
+
 依 `environment_ai_plan.md` 建立的 Clean Architecture 後端。這一版完成裝置與感測歷史的 HTTP 流程，讓後續 MQTT、規則引擎與 AI 可以沿用 application 層。
 
 ## 本機啟動（PowerShell）
@@ -64,8 +66,18 @@ tests/               # 使用獨立 SQLite 的 API / migration 整合測試
 | POST | `/api/v1/devices` | 註冊裝置 |
 | GET | `/api/v1/devices` | 裝置清單，支援 limit / offset |
 | GET | `/api/v1/devices/{id}` | 裝置詳情 |
-| POST | `/api/v1/telemetry` | HTTP 測試入口，寫入感測資料 |
+| POST | `/api/v1/telemetry` | HTTP 測試入口，寫入感測資料；回應列出被剔除的指標 |
 | GET | `/api/v1/devices/{id}/readings` | 依觀測時間倒序，支援 start / end / limit / offset |
+| GET | `/api/v1/devices/{id}/readings/summary` | 依時間區間彙總平均／最小／最大（預設最近一小時、每分鐘） |
+| GET | `/api/v1/devices/{id}/state` | 每個指標最新的有效值、資料年齡、是否新鮮、體感溫度 |
+| GET | `/api/v1/devices/{id}/events/history` | 最近的事件（開始、結束、最高等級、規則版本） |
+| GET | `/api/v1/devices/{id}/events/{event_id}` | 事件證據與每次變化 |
+| POST | `/api/v1/devices/{id}/events/{event_id}/ack`、`/snooze`、`/handled` | 確認、延後、記錄已處理並排程追蹤 |
+| GET／PUT | `/api/v1/rules`、`/api/v1/rules/{id}` | 查詢或修改規則門檻，免重啟 |
+| GET／PUT | `/api/v1/devices/{id}/settings` | 人格、勿擾時段、每小時提醒上限 |
+| GET／PUT | `/api/v1/devices/{id}/lamp` | 檯燈模式：off／dim／warm／day（也接受 on、brighter、dimmer） |
+
+對話、通知、排程等其他端點見 [LLM 架構](docs/llm-architecture.md) 第 10 節。
 
 ```powershell
 $device = @{ id = 'room01'; name = '書房'; location = '二樓' } | ConvertTo-Json
@@ -86,7 +98,7 @@ Invoke-RestMethod http://127.0.0.1:8000/api/v1/devices/room01/readings
 
 相同 message_id 與相同內容重送時回傳原資料；同 ID 不同內容回 409。裝置不存在回 404，格式錯誤回 422。時間必須包含時區，落庫及輸出統一 UTC；缺少的指標保留 null。歷史查詢時間範圍含兩端。
 
-目前 HTTP 入口採整包嚴格驗證：任一指標超出示範合理範圍便拒收。`quality` 僅保存來源標記，不代表後端品質判定。歷史資料可寫入，但尚不計算即時狀態或告警。
+每個指標分別驗證：超出合理範圍的指標記為缺值並列在回應的 `rejected_metrics`，同一封包的其他指標照常保存；所有指標都無效才回 422。MQTT 使用同一份驗證。`quality` 不是 `ok` 的讀值會保存，但不參與判斷。觀測時間與接收時間相差超過 30 秒的補送資料只存歷史，不觸發提醒。
 
 ## 驗證與資料庫
 
@@ -115,11 +127,10 @@ DATABASE_URL=postgresql+psycopg://memo:password@localhost:5432/memo
 
 ## 下一階段
 
-- 正式設備接入與帳號／ACL／TLS（WSL Docker、Mosquitto、Worker 落庫及離線補收已驗證）。
-- 每個指標個別品質判斷、時鐘偏差、最新有效狀態與 stale 偵測。
-- 通知合併、使用者延後提醒、勿擾時段與裝置投遞。
-- 持久化人格設定、自然語言任務操作與處理後追蹤排程。
-- 身分驗證與裝置授權（目前是本機開發雛形）。
+- Mosquitto 帳號、ACL、TLS；MQTT `status`（Last Will）與送往實體裝置的 `commands`／`acks`。
+- API 身分驗證與裝置授權（目前是本機開發雛形）。
+- 資料保留策略（原始資料 30 天、長期改存彙總）與 PostgreSQL 整合驗證。
+- 展示用的注入時鐘、通知 SSE。
 
 以上功能尚未實作，完整規劃仍以 `environment_ai_plan.md` 為準。
 
