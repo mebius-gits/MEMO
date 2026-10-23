@@ -22,7 +22,8 @@ export function createMemoScene(container) {
   controls.target.copy(target);
   Object.assign(controls, { enableDamping: true, enablePan: false, minDistance: 6.5, maxDistance: 13, minPolarAngle: .7, maxPolarAngle: 1.55, minAzimuthAngle: -1.2, maxAzimuthAngle: 1.2 });
 
-  scene.add(new THREE.HemisphereLight(0xffffff, 0xb9d6d2, 1.6));
+  const hemi = new THREE.HemisphereLight(0xffffff, 0xb9d6d2, 1.6);
+  scene.add(hemi);
   const key = new THREE.DirectionalLight(0xffffff, 1.9);
   key.position.set(5, 7, 6);
   scene.add(key);
@@ -137,6 +138,59 @@ export function createMemoScene(container) {
   bctx.fillStyle = shade; bctx.fillRect(0, 0, 256, 256);
   const shadow = mesh(new THREE.PlaneGeometry(3.9, 3.4), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(blob), transparent: true, depthWrite: false }), scene, 0, .002, .6);
   shadow.rotation.x = -Math.PI / 2;
+
+  // Desk lamp beside MEMO, its shade tipped toward MEMO. Each mode sets the
+  // room light, the lamp's own light and glow; the scene eases toward them over ~a second.
+  const LAMP_MODES = {
+    day: { sky: 0xffffff, ground: 0xb9d6d2, hemi: 1.6, keyColor: 0xffffff, key: 1.9, bulb: 0xfffbea, light: 0xfff6e0, lamp: 1.2, glow: .28 },
+    // Soft peach rather than orange: a saturated warm light turns MEMO's mint body olive.
+    warm: { sky: 0xfff1e0, ground: 0xd9c5ae, hemi: 1.4, keyColor: 0xffe6c8, key: 1.5, bulb: 0xffd9a0, light: 0xffcf9c, lamp: 3.5, glow: .5 },
+    dim: { sky: 0x8a8f99, ground: 0x3a3a3c, hemi: .6, keyColor: 0xffd0a0, key: .35, bulb: 0xffc27a, light: 0xffbf85, lamp: 3.5, glow: .65 },
+    off: { sky: 0x64727e, ground: 0x1d2327, hemi: .4, keyColor: 0x8fa6bd, key: .22, bulb: 0x77746c, light: 0x000000, lamp: 0, glow: 0 },
+  };
+  const lamp = new THREE.Group();
+  lamp.scale.setScalar(.7);
+  // Stand the lamp at (x, z) on the floor, turned so its shade leans toward MEMO.
+  function placeLamp(x, z) { lamp.position.set(x, 0, z); lamp.rotation.y = Math.atan2(z, -x); }
+  placeLamp(-1.95, -1.9);
+  scene.add(lamp);
+  const lampBody = toon(COLORS.yellow), lampStem = toon(COLORS.slot);
+  mesh(new THREE.CylinderGeometry(.42, .5, .14, 40), lampBody, lamp, 0, .07, 0, limbOutline);
+  const stemCurve = new THREE.CatmullRomCurve3([[0, .12, 0], [0, 1.25, 0], [.2, 2.05, 0], [.7, 2.42, 0]].map(p => new THREE.Vector3(...p)));
+  mesh(new THREE.TubeGeometry(stemCurve, 40, .05, 12, false), lampStem, lamp, 0, 0, 0, limbOutline);
+  mesh(new THREE.SphereGeometry(.09, 16, 12), lampStem, lamp, 0, 1.25, 0, limbOutline);
+  const lampHead = new THREE.Group();
+  lampHead.position.set(.82, 2.4, 0);
+  lampHead.rotation.z = .62;
+  lamp.add(lampHead);
+  const shadeMaterial = toon(COLORS.yellow); shadeMaterial.side = THREE.DoubleSide;
+  mesh(new THREE.CylinderGeometry(.13, .42, .5, 40, 1, true), shadeMaterial, lampHead, 0, 0, 0, outlineMaterial(.022));
+  mesh(new THREE.SphereGeometry(.14, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2), lampBody, lampHead, 0, .22, 0, limbOutline);
+  const bulbMaterial = new THREE.MeshBasicMaterial({ color: LAMP_MODES.day.bulb });
+  mesh(new THREE.SphereGeometry(.15, 20, 16), bulbMaterial, lampHead, 0, -.2, 0);
+  const lampLight = new THREE.PointLight(LAMP_MODES.day.light, LAMP_MODES.day.lamp, 10, 1.2);
+  lampLight.position.set(0, -.45, 0);
+  lampHead.add(lampLight);
+  const halo = document.createElement('canvas');
+  halo.width = halo.height = 128;
+  const hctx = halo.getContext('2d'), haloShade = hctx.createRadialGradient(64, 64, 4, 64, 64, 64);
+  haloShade.addColorStop(0, 'rgba(255,236,200,1)'); haloShade.addColorStop(.35, 'rgba(255,200,130,.45)'); haloShade.addColorStop(1, 'rgba(255,180,110,0)');
+  hctx.fillStyle = haloShade; hctx.fillRect(0, 0, 128, 128);
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(halo), color: LAMP_MODES.day.bulb, transparent: true, opacity: LAMP_MODES.day.glow, blending: THREE.AdditiveBlending, depthWrite: false }));
+  glow.position.set(0, -.3, 0); glow.scale.setScalar(1.5);
+  lampHead.add(glow);
+  let lampTarget = LAMP_MODES.day;
+  const scratch = new THREE.Color();
+  function easeLamp(rate) {
+    const t = paused ? 1 : Math.min(1, rate);
+    const toward = (color, hex) => color.lerp(scratch.setHex(hex), t);
+    toward(hemi.color, lampTarget.sky); toward(hemi.groundColor, lampTarget.ground); toward(key.color, lampTarget.keyColor);
+    toward(bulbMaterial.color, lampTarget.bulb); toward(lampLight.color, lampTarget.light); toward(glow.material.color, lampTarget.bulb);
+    hemi.intensity += (lampTarget.hemi - hemi.intensity) * t;
+    key.intensity += (lampTarget.key - key.intensity) * t;
+    lampLight.intensity += (lampTarget.lamp - lampLight.intensity) * t;
+    glow.material.opacity += (lampTarget.glow - glow.material.opacity) * t;
+  }
 
   const headAnchor = new THREE.Vector3(W / 2 - .1, H + .3, FRONT);
   let mood = 'neutral', intensity = .4, talking = false, paused = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -264,6 +318,7 @@ export function createMemoScene(container) {
     body.rotation.z = mood === 'confused' ? -.07 : mood === 'alert' && !paused ? Math.sin(elapsed * 26) * .012 : Math.sin(elapsed * .7) * .008 * intensity;
     feet.forEach((foot, i) => { foot.rotation.x = paused ? 0 : Math.sin(elapsed * 2.2 + i * 1.4) * .12 * (mood === 'happy' ? 2 : 1); });
     drawFace(!paused && elapsed % 5 > 4.82, talking && !paused && Math.floor(performance.now() / 140) % 2 === 1);
+    easeLamp(delta * 3.5);
     controls.update(); renderer.render(scene, camera);
     frameId = requestAnimationFrame(animate);
   }
@@ -274,6 +329,8 @@ export function createMemoScene(container) {
     camera.aspect = width / height;
     // Portrait stages (phones) zoom out so BMO and its speech bubble both fit.
     camera.zoom = Math.min(1, camera.aspect / .9);
+    // Portrait stages have no room on the left; the lamp moves to MEMO's right side.
+    if (camera.aspect < 1) placeLamp(2.25, .35); else placeLamp(-1.95, -1.9);
     camera.updateProjectionMatrix();
   }); observer.observe(container);
   renderer.domElement.addEventListener('webglcontextlost', e => { e.preventDefault(); document.querySelector('#webgl-fallback').hidden = false; });
@@ -281,6 +338,8 @@ export function createMemoScene(container) {
   return {
     setEmotion(label, amount) { mood = label; intensity = amount; },
     setTalking(value) { talking = value; },
+    // Desk lamp: off | dim | warm | day.
+    setLamp(mode) { lampTarget = LAMP_MODES[mode] || LAMP_MODES.day; },
     toggleMotion() { paused = !paused; return paused; },
     get paused() { return paused; },
     reset() { camera.position.copy(home); controls.target.copy(target); controls.update(); },

@@ -7,6 +7,7 @@ const ICONS = {
   thermo: '<path d="M10 14.5V5a2 2 0 0 1 4 0v9.5a4 4 0 1 1-4 0z"/>',
   drop: '<path d="M12 3c3 4 6 7 6 10.5a6 6 0 0 1-12 0C6 10 9 7 12 3z"/>',
   wind: '<path d="M3 9h11a3 3 0 1 0-3-3M3 14h15a3 3 0 1 1-3 3M3 19h7"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   replay: '<path d="M4 12a8 8 0 1 0 3-6.2M4 4v5h5"/>',
   pause: '<path d="M9 5v14M15 5v14"/>',
   play: '<path d="M7 4l13 8-13 8z"/>',
@@ -14,10 +15,11 @@ const ICONS = {
   mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
   speaker: '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/>',
   mute: '<path d="M4 9v6h4l5 4V5L8 9zM17 9l4 6M21 9l-4 6"/>',
+  image: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-9 8"/>',
 };
 const icon = name => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]}</svg>`;
 for (const el of document.querySelectorAll('[data-icon]')) el.innerHTML = icon(el.dataset.icon);
-for (const [id, name] of [['reset-camera', 'replay'], ['pause-motion', 'pause'], ['send-message', 'send'], ['mic', 'mic']]) $(`#${id}`).innerHTML = icon(name);
+for (const [id, name] of [['reset-camera', 'replay'], ['pause-motion', 'pause'], ['send-message', 'send'], ['mic', 'mic'], ['attach', 'image']]) $(`#${id}`).innerHTML = icon(name);
 const storage = { get(key) { try { return localStorage.getItem(key); } catch { return null; } }, set(key, value) { try { localStorage.setItem(key, value); } catch { /* Private browsers may block storage. */ } } };
 // Backend origin comes only from VITE_API_URL (read when Vite starts or builds).
 // The page follows the device Node-RED is sending for; room01 until Node-RED reports otherwise.
@@ -64,11 +66,18 @@ function placeBubble() {
   }
   requestAnimationFrame(placeBubble);
 }
-function say(text, { quote = '', waiting = false, voice = false } = {}) {
+function say(text, { quote = '', waiting = false, voice = false, sources = [] } = {}) {
   // Anything new on screen interrupts what MEMO was saying; only replies and notices are spoken.
   if (voice && voiceOn) speech?.speak(text); else speech?.stop();
   $('#bubble-quote').textContent = quote; $('#bubble-quote').hidden = !quote;
   $('#bubble-text').textContent = text;
+  // Web answers show where they came from; the links open the source page.
+  const links = sources.filter((item, index) => sources.findIndex(other => other.source === item.source) === index).map(item => {
+    const link = document.createElement('a');
+    Object.assign(link, { href: item.url, target: '_blank', rel: 'noopener noreferrer', textContent: item.source, title: item.title });
+    return link;
+  });
+  $('#bubble-sources').replaceChildren(...(links.length ? ['來源：', ...links] : [])); $('#bubble-sources').hidden = !links.length;
   bubbleEl.classList.toggle('waiting', waiting);
   bubbleEl.classList.remove('pop'); void bubbleEl.offsetWidth; bubbleEl.classList.add('pop');
   bubbleEl.scrollTop = 0; bubbleState.shownAt = performance.now(); bubbleState.x = NaN;
@@ -122,13 +131,13 @@ function drawSparkline(key) {
   let path = '', drawing = false;
   values.forEach((value, index) => { if (value === null) { drawing = false; return; } path += `${drawing ? 'L' : 'M'}${index / (values.length - 1) * 100},${24 - (value - min) / span * 20} `; drawing = true; });
   const element = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  element.setAttribute('d', path); element.setAttribute('fill', 'none'); element.setAttribute('stroke', key === 'temperature_c' ? '#D9A400' : key === 'humidity_pct' ? '#3D86E0' : '#2F8F7B'); element.setAttribute('stroke-width', '2'); element.setAttribute('stroke-linejoin', 'round'); element.setAttribute('vector-effect', 'non-scaling-stroke'); svg.appendChild(element);
+  element.setAttribute('d', path); element.setAttribute('fill', 'none'); element.setAttribute('stroke', { temperature_c: '#D9A400', humidity_pct: '#3D86E0', co2_ppm: '#2F8F7B', illuminance_lux: '#C2711A' }[key]); element.setAttribute('stroke-width', '2'); element.setAttribute('stroke-linejoin', 'round'); element.setAttribute('vector-effect', 'non-scaling-stroke'); svg.appendChild(element);
 }
 function renderReadings() {
   const latest = readings[0];
   const fresh = freshness(latest);
   $('#freshness').textContent = fresh; $('#freshness').classList.toggle('live', fresh === '剛剛更新' && connected);
-  for (const [key, id] of [['temperature_c', 'temperature-value'], ['humidity_pct', 'humidity-value'], ['co2_ppm', 'co2-value']]) {
+  for (const [key, id] of [['temperature_c', 'temperature-value'], ['humidity_pct', 'humidity-value'], ['co2_ppm', 'co2-value'], ['illuminance_lux', 'lux-value']]) {
     const value = latest?.[key]; $(`#${id}`).textContent = value == null ? '—' : key === 'temperature_c' ? Number(value).toFixed(1) : Math.round(value).toLocaleString(); drawSparkline(key);
   }
 }
@@ -147,6 +156,7 @@ async function refresh(showErrors = false) {
     }
     if (currentGeneration !== generation || selected !== activeDevice) return;
     readings = resultReadings; connection(true, '已連接後端'); renderReadings();
+    await syncLamp(selected);
     await syncCompanion(selected, currentGeneration);
   } catch (error) { if (currentGeneration !== generation) return; connection(false, '後端連線中斷'); $('#freshness').classList.remove('live'); $('#freshness').textContent = '連線中斷'; if (showErrors) toast(error.message); }
   finally { refreshing = false; }
@@ -171,25 +181,88 @@ document.querySelectorAll('input[name="persona"]').forEach(input => { input.onch
 // Editing a preset's description turns it into the custom persona.
 $('#persona-text').oninput = event => { persona.custom = event.target.value; if (persona.id !== 'custom') { persona.id = 'custom'; $('input[name="persona"][value="custom"]').checked = true; } storage.set('memo.persona', JSON.stringify(persona)); };
 renderPersona();
+// Desk lamp: switched only here (MEMO can see it but not change it); the backend keeps the
+// mode, so other open pages follow within a refresh.
+const LAMP_LABELS = { off: '關燈', dim: '暗光', warm: '溫暖光', day: '白天光' };
+let lampMode = 'day', lampChanging = false;
+function showLamp(mode) {
+  lampMode = LAMP_LABELS[mode] ? mode : 'day';
+  $(`input[name="lamp"][value="${lampMode}"]`).checked = true;
+  $('.stage').dataset.lamp = lampMode; $('#lamp-state').textContent = LAMP_LABELS[lampMode];
+  companion?.setLamp(lampMode);
+}
+async function syncLamp(device) {
+  if (lampChanging) return;
+  const lamp = await request(`/api/v1/devices/${encodeURIComponent(device)}/lamp`);
+  if (device === activeDevice && !lampChanging) showLamp(lamp.mode);
+}
+document.querySelectorAll('input[name="lamp"]').forEach(input => {
+  input.onchange = async () => {
+    const previous = lampMode;
+    showLamp(input.value);
+    if (!apiBase) return;
+    lampChanging = true;
+    try { showLamp((await request(`/api/v1/devices/${encodeURIComponent(activeDevice)}/lamp`, { method: 'PUT', body: JSON.stringify({ mode: input.value }) })).mode); }
+    catch (error) { showLamp(previous); toast(error.message); }
+    finally { lampChanging = false; }
+  };
+});
 // thinking and listening are page states; the rest come from MEMO's replies.
 const moodLabels = { neutral: '安靜陪伴', friendly: '溫柔陪伴', happy: '開心', concerned: '有點擔心', confused: '有點疑惑', surprised: '嚇一跳', proud: '專業模式', sleepy: '有點睏', alert: '警戒中', error: '出錯了', thinking: '思考中', listening: '在聽你說' };
 const moodFaces = { neutral: '◡', friendly: '◡', happy: '▽', concerned: '︵', confused: '?', surprised: '!', proud: '✦', sleepy: 'z', alert: '!', error: '×', thinking: '…', listening: '♪' };
-const chips = () => document.querySelectorAll('.chip');
+// Images: one picture per message, shrunk here to a JPEG of at most 1024 px so phone photos
+// upload quickly. The backend shows it to the model and keeps only a note that it was sent.
+const IMAGE_SIDE = 1024, IMAGE_LIMIT = 2 * 1024 * 1024;
+let attachment = null;
+async function shrinkImage(file) {
+  if (!file.type.startsWith('image/')) throw new Error('只能上傳圖片。');
+  const bitmap = await createImageBitmap(file).catch(() => { throw new Error('這張圖片無法讀取，請換一張 JPEG 或 PNG。'); });
+  const scale = Math.min(1, IMAGE_SIDE / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(bitmap.width * scale); canvas.height = Math.round(bitmap.height * scale);
+  const context = canvas.getContext('2d');
+  context.fillStyle = '#fff'; context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height); bitmap.close();
+  for (const quality of [.85, .7, .5]) {
+    const url = canvas.toDataURL('image/jpeg', quality);
+    if (url.length * .75 <= IMAGE_LIMIT) return url;
+  }
+  throw new Error('圖片太大了，請換一張小一點的。');
+}
+function setAttachment(url) {
+  attachment = url;
+  $('#attachment').hidden = !url;
+  if (url) $('#attachment-preview').src = url; else $('#attachment-preview').removeAttribute('src');
+}
+async function attachFile(file) {
+  try { setAttachment(await shrinkImage(file)); $('#chat-input').focus(); }
+  catch (error) { toast(error.message); }
+}
+$('#attach').onclick = () => $('#image-input').click();
+$('#image-input').onchange = event => { const [file] = event.target.files; event.target.value = ''; if (file) attachFile(file); };
+$('#attachment-remove').onclick = () => setAttachment(null);
+// Pasting a screenshot into the message box attaches it.
+$('#chat-input').addEventListener('paste', event => {
+  const file = [...(event.clipboardData?.files || [])].find(item => item.type.startsWith('image/'));
+  if (file) { event.preventDefault(); attachFile(file); }
+});
 async function chat(text) {
   if (chatting) return;
   if (missingApi()) return;
-  const selected = activeDevice, currentGeneration = generation;
-  chatting = true; $('#send-message').disabled = true; chips().forEach(chip => { chip.disabled = true; });
-  $('#chat-input').value = '';
-  say('讓我想想…', { quote: text, waiting: true });
+  const selected = activeDevice, currentGeneration = generation, image = attachment;
+  chatting = true; $('#send-message').disabled = true;
+  $('#chat-input').value = ''; setAttachment(null);
+  if (image) text ||= '幫我看看這張圖';
+  const quote = image ? `${text}（附圖）` : text;
+  say('讓我想想…', { quote, waiting: true });
   showEmotion({ label: 'thinking', intensity: .5 });
   try {
-    const reply = await request(`/api/v1/devices/${encodeURIComponent(selected)}/interaction`, { method: 'POST', body: JSON.stringify({ session_id: sessionId, request_id: crypto.randomUUID(), user_message: text, personality: personality() }) });
+    const reply = await request(`/api/v1/devices/${encodeURIComponent(selected)}/interaction`, { method: 'POST', body: JSON.stringify({ session_id: sessionId, request_id: crypto.randomUUID(), user_message: text, personality: personality(), ...(image ? { image } : {}) }) });
     if (generation !== currentGeneration) { say('裝置已切換，已略過上一個裝置的回覆。'); return; }
-    say(reply.text, { quote: text, voice: true });
+    say(reply.text, { quote, voice: true, sources: reply.sources || [] });
     showEmotion(reply.emotion);
-  } catch (error) { say(error.message, { quote: text }); showEmotion({ label: 'error', intensity: .5 }); }
-  finally { chatting = false; $('#send-message').disabled = false; chips().forEach(chip => { chip.disabled = false; }); }
+  } catch (error) { say(error.message, { quote }); showEmotion({ label: 'error', intensity: .5 }); }
+  finally { chatting = false; $('#send-message').disabled = false; }
 }
 // Mic: click to start. A pause after speaking (or a second click, or 15 s) stops it and sends the
 // transcript as a chat message; silence from the start cancels quietly.
@@ -221,8 +294,7 @@ function cancelRecording() {
   recording?.cancel(); recording = null; micState(false);
   say('我沒聽到聲音，想說話時再按一次麥克風。'); showEmotion({ label: 'neutral', intensity: .3 });
 }
-$('#chat-form').onsubmit = event => { event.preventDefault(); const text = $('#chat-input').value.trim(); if (text) chat(text); };
-chips().forEach(chip => { chip.onclick = () => chat(chip.dataset.prompt); });
+$('#chat-form').onsubmit = event => { event.preventDefault(); const text = $('#chat-input').value.trim(); if (text || attachment) chat(text); };
 // Node-RED keeps sending drifting readings; this panel only adds or clears disturbance offsets there.
 const nodeRedBase = (import.meta.env.VITE_NODE_RED_URL || '').trim().replace(/\/$/, '');
 const offsetInputs = [...document.querySelectorAll('[data-offset]')];

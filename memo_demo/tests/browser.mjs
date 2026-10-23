@@ -31,6 +31,15 @@ try {
   await page.locator('#reset-disturbance').click();
   await page.waitForFunction(() => document.querySelector('#dist-co2_ppm-output').textContent === '0 ppm');
   assert.deepEqual(await offsets(), {});
+  // Desk lamp: picking a mode updates the backend and the room; restore daylight afterwards.
+  const api = process.env.TEST_API_URL || 'http://localhost:8000';
+  const lampMode = async () => (await (await fetch(`${api}/api/v1/devices/room01/lamp`)).json()).mode;
+  await page.getByText('溫暖', { exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('.stage').dataset.lamp === 'warm');
+  assert.equal(await lampMode(), 'warm');
+  await page.getByText('白天', { exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('#lamp-state').textContent === '白天光');
+  assert.equal(await lampMode(), 'day');
   // Persona: preset is sent with the chat; editing its description switches to the custom persona.
   await page.getByText('損友', { exact: true }).click();
   assert.ok((await page.locator('#persona-text').inputValue()).startsWith('愛吐槽的損友'));
@@ -38,7 +47,8 @@ try {
   assert.equal(await page.locator('input[name="persona"]:checked').getAttribute('value'), 'custom');
   const chatRequest = page.waitForRequest(request => request.url().endsWith('/interaction'));
   const spoken = page.waitForResponse(response => response.url().endsWith('/tts'), { timeout: 120000 });
-  await page.locator('.chip').first().click();
+  await page.locator('#chat-input').fill('MEMO，現在的環境如何？');
+  await page.locator('#send-message').click();
   assert.deepEqual((await chatRequest).postDataJSON().personality, { tone: 'gentle', persona: '講話像老派管家，有禮但會碎念。' });
   // The reply appears in the speech bubble, quoting the question, placed on stage above BMO.
   await page.waitForFunction(() => !document.querySelector('#bubble').classList.contains('waiting'), null, { timeout: 60000 });
@@ -63,5 +73,5 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await page.screenshot({ path: 'test-results/mobile.png', fullPage: true });
   assert.deepEqual(errors, []);
-  console.log('PASS: 3D renderer, real backend connection, Node-RED disturbance and restore, persona settings, chat reply, voice in/out, mobile layout');
+  console.log('PASS: 3D renderer, real backend connection, Node-RED disturbance and restore, desk lamp, persona settings, chat reply, voice in/out, mobile layout');
 } finally { await browser.close(); }
