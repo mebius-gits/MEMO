@@ -16,10 +16,11 @@ const ICONS = {
   speaker: '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/>',
   mute: '<path d="M4 9v6h4l5 4V5L8 9zM17 9l4 6M21 9l-4 6"/>',
   image: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-9 8"/>',
+  newChat: '<path d="M4 5h16v11H9l-5 4z"/><path d="M12 8v5M9.5 10.5h5"/>',
 };
 const icon = name => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]}</svg>`;
 for (const el of document.querySelectorAll('[data-icon]')) el.innerHTML = icon(el.dataset.icon);
-for (const [id, name] of [['reset-camera', 'replay'], ['pause-motion', 'pause'], ['send-message', 'send'], ['mic', 'mic'], ['attach', 'image']]) $(`#${id}`).innerHTML = icon(name);
+for (const [id, name] of [['reset-camera', 'replay'], ['pause-motion', 'pause'], ['send-message', 'send'], ['mic', 'mic'], ['attach', 'image'], ['new-chat', 'newChat']]) $(`#${id}`).innerHTML = icon(name);
 const storage = { get(key) { try { return localStorage.getItem(key); } catch { return null; } }, set(key, value) { try { localStorage.setItem(key, value); } catch { /* Private browsers may block storage. */ } } };
 // Backend origin comes only from VITE_API_URL (read when Vite starts or builds).
 // The page follows the device Node-RED is sending for; room01 until Node-RED reports otherwise.
@@ -112,7 +113,7 @@ async function request(path, options = {}, base = apiBase) {
     const error = new Error(response.status === 404 ? '找不到這個裝置或 API，請確認後端已更新。' : `後端回應錯誤（${response.status}），請稍後再試。`);
     error.status = response.status; throw error;
   }
-  return response.json();
+  return response.status === 204 ? null : response.json();
 }
 function freshness(reading) {
   if (!reading) return '等待資料';
@@ -294,6 +295,18 @@ function cancelRecording() {
   recording?.cancel(); recording = null; micState(false);
   say('我沒聽到聲音，想說話時再按一次麥克風。'); showEmotion({ label: 'neutral', intensity: .3 });
 }
+// Start over: the conversation and its summaries are cleared; what MEMO remembers about the
+// person (name, likes, projects) stays, since it belongs to the same browser session.
+$('#new-chat').onclick = async () => {
+  if (chatting || missingApi()) return;
+  if (!confirm('要清除這次的對話，重新開始嗎？\nMEMO 記得的「關於你的事」會保留。')) return;
+  try {
+    await request(`/api/v1/devices/${encodeURIComponent(activeDevice)}/memory/conversation?session_id=${sessionId}`, { method: 'DELETE' });
+    speech?.stop(); bubbleState.queue.length = 0;
+    say('好，我們重新開始吧！想聊什麼都可以。'); showEmotion({ label: 'friendly', intensity: .5 });
+    toast('已清除這次的對話。');
+  } catch (error) { toast(error.message); }
+};
 $('#chat-form').onsubmit = event => { event.preventDefault(); const text = $('#chat-input').value.trim(); if (text || attachment) chat(text); };
 // Node-RED keeps sending drifting readings; this panel only adds or clears disturbance offsets there.
 const nodeRedBase = (import.meta.env.VITE_NODE_RED_URL || '').trim().replace(/\/$/, '');

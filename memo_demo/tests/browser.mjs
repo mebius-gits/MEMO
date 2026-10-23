@@ -66,6 +66,12 @@ try {
   await page.waitForTimeout(1500);
   await page.locator('#mic').click();
   assert.equal((await heard).status(), 200);
+  // Start over: confirm, and the stored conversation for this session is gone.
+  page.once('dialog', dialog => dialog.accept());
+  const cleared = page.waitForResponse(response => response.request().method() === 'DELETE' && response.url().includes('/memory/conversation'));
+  await page.locator('#new-chat').click();
+  assert.equal((await cleared).status(), 204);
+  await page.waitForFunction(() => document.querySelector('#bubble-text').textContent.startsWith('好，我們重新開始吧'));
   await page.locator('#pause-motion').click();
   await page.screenshot({ path: 'test-results/desktop.png', fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -73,5 +79,5 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await page.screenshot({ path: 'test-results/mobile.png', fullPage: true });
   assert.deepEqual(errors, []);
-  console.log('PASS: 3D renderer, real backend connection, Node-RED disturbance and restore, desk lamp, persona settings, chat reply, voice in/out, mobile layout');
+  console.log('PASS: 3D renderer, real backend connection, Node-RED disturbance and restore, desk lamp, persona settings, chat reply, voice in/out, new conversation, mobile layout');
 } finally { await browser.close(); }
