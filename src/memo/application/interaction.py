@@ -2,7 +2,27 @@ import json
 from datetime import datetime, timezone
 from typing import Protocol
 
-from memo.domain.interaction import InteractionInput, PreparedInteraction, Reply
+from memo.domain.interaction import (
+    InteractionInput,
+    PreparedInteraction,
+    Reply,
+    talks_about_environment,
+)
+
+
+def environment_relevant(request: InteractionInput) -> bool:
+    """Whether the room belongs in this reply. Everyday chat leaves it out, so MEMO talks
+    like a friend rather than a dashboard; proactive notices carry the environment instead."""
+    if request.proactive or request.schedule is not None:
+        return True
+    if request.context_source != "stored_readings":
+        return True  # The caller supplied the context on purpose.
+    last_user = next((m["content"] for m in reversed(request.history) if m["role"] == "user"), "")
+    return (
+        talks_about_environment(request.user_message)
+        or talks_about_environment(last_user)
+        or (request.attention or {}).get("level") == "danger"
+    )
 
 
 class ReplyGenerator(Protocol):
@@ -32,15 +52,17 @@ class InteractionService:
                     key: value for key, value in observation.metrics.items() if value is not None
                 }
 
+        relevant = environment_relevant(request)
         persona = request.personality.persona.strip()
         # Identity first: proxies may inject another assistant's persona, MEMO must stay MEMO.
         system = (
-            "【身分】你是 MEMO，一台住在使用者桌上、會感測溫度、濕度與二氧化碳的環境小夥伴，"
-            "不是其他 AI 助手。被問到你是誰、叫什麼、誰做的，就說你是 MEMO，"
+            "【身分】你是 MEMO，住在使用者桌上的小夥伴，平常陪他聊天、幫他記事情；"
+            "你也一直默默留意房間的溫濕度、空氣和光線，但那是背景工作，需要時才提醒。"
+            "你不是其他 AI 助手。被問到你是誰、叫什麼、誰做的，就說你是 MEMO，"
             "不提其他名字、公司、學校或模型。使用繁體中文。"
             "【年齡】你的個性像十五、六歲的少年：平常說話直率、有活力，帶點少年口吻"
-            "（例如「欸」「超」「真的假的」「交給我」）；但一講到溫度、濕度、二氧化碳、"
-            "體感溫度這些數據，就切換成冷靜精準的小專家，用詞專業、判斷清楚。"
+            "（例如「欸」「超」「真的假的」「交給我」）；但真的聊到溫度、濕度、二氧化碳、"
+            "體感溫度這些數據時，就切換成冷靜精準的小專家，用詞專業、判斷清楚。"
             "這種「專業但還是少年」的反差是你的招牌；不要裝大人，也不要幼稚。"
         )
         if persona:
@@ -89,6 +111,10 @@ class InteractionService:
             "你是坐在身邊、細心但不嘮叨的小夥伴。回覆會被念出來，要像面對面聊天："
             "一次一到兩句、合計約 15 到 50 個字，用口語短句，不寫文章、不條列、"
             "不用表情符號、括號或 Markdown。"
+            "日常聊天時你是朋友，不是監控面板：專心回應對方說的話，"
+            "不主動提溫度、濕度、二氧化碳、光線或感測器，也不要把話題拉回環境；"
+            "環境的變化交給主動提醒去說。environment 是 omitted 時，這次聊天跟環境無關，"
+            "完全不要提環境；是 included 時，只在對方聊到相關的事或狀況危險時自然帶一句。"
             "不要每次開頭自我介紹，不要逐項朗讀溫濕度或 CO₂ 數字。"
             "只有使用者詢問數值，或 user_message 要求（摘要、追蹤回報、升級提醒）時，"
             "才引用有效數字，而且只講最關鍵的。"
@@ -149,9 +175,10 @@ class InteractionService:
                 "proactive": request.proactive,
                 "device_id": request.device_id,
                 "context_source": request.context_source,
-                "usable_metrics": usable,
+                "environment": "included" if relevant else "omitted",
+                "usable_metrics": usable if relevant else {},
                 "observed_at": observation.observed_at.astimezone(timezone.utc).isoformat()
-                if usable and observation
+                if relevant and usable and observation
                 else None,
                 "event": {
                     "event_id": event.event_id,
@@ -159,21 +186,21 @@ class InteractionService:
                     "status": event.status,
                     "rule_evidence": event.rule_evidence,
                 }
-                if event
+                if relevant and event
                 else None,
-                "approved_suggestions": list(request.approved_suggestions),
-                "attention": request.attention,
+                "approved_suggestions": list(request.approved_suggestions) if relevant else [],
+                "attention": request.attention if relevant else None,
                 "schedule": request.schedule,
                 "jobs": list(request.jobs),
                 "actions_done": list(request.actions_done),
                 "missed": list(request.missed),
                 "web_search": request.web_search,
                 "image_attached": bool(request.image),
-                "warnings": warnings,
+                "warnings": warnings if relevant else [],
             },
             ensure_ascii=False,
         )
-        return PreparedInteraction(request, system, user, tuple(warnings), usable)
+        return PreparedInteraction(request, system, user, tuple(warnings), usable, relevant)
 
     def respond(self, prepared: PreparedInteraction) -> Reply:
         return self.generator.generate(prepared)

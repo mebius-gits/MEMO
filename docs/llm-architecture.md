@@ -234,6 +234,7 @@ flowchart LR
 3. 動作邊界：只有 `actions_done` 列出的才能說「已完成」；非主動訊息可附 `action` 欄位，並說明格式。
 4. 關注語氣：依 `attention` 的等級調整（注意輕聲、警戒明確、危險直接）；重複提醒要換說法。
 5. 口語長度：回覆會被念出來，一次一到兩句、約 15–50 字；不用條列、表情符號或 Markdown；不輸出欄位名稱。
+   日常聊天時 MEMO 是朋友，不是監控面板：不主動提溫度、濕度、CO₂、光線或感測器，環境的變化交給主動提醒去說。後端也會把環境資料擋在提示外（`environment: omitted`，讀值、事件、關注等級、資料警告都不給），只有以下情況才帶入：使用者這句或上一句聊到相關的事（熱、冷、悶、空氣、幾度、燈、睡不著…）、目前有危險等級的事件、或是主動通知本身。
 6. 輸出：JSON `{"text":…,"emotion":{"label":…,"intensity":…}}`，可附 `action`。
 
 **user（JSON 資料，明確標示「僅為資料」）**
@@ -241,6 +242,7 @@ flowchart LR
 | 欄位 | 內容 |
 | --- | --- |
 | `user_message` | 使用者的話；主動通知時是後端給的任務說明（見 5.3） |
+| `environment` | `included` 或 `omitted`：這次回覆是否帶入環境資料（見上方第 5 點） |
 | `usable_metrics`／`observed_at` | 30 秒內、品質正常的讀值 |
 | `event` | 規則引擎核對過的事件 |
 | `attention` | `level_label`、`minutes_active`、`reminders`、`value`、`snoozed` |
@@ -445,6 +447,7 @@ Compose 會把前三項同時傳給 api 和 environment-worker：規則在 worke
 - `tests/test_events_rules.py`：資料過期檢查、`sensor_offline` 的開啟與連續 3 筆恢復、逐一驗證指標、`/state` 與彙總、事件歷史與 ack／snooze／handled、規則修改與停用、裝置設定。
 - `tests/test_lamp_search.py`：MEMO 不控制檯燈也看不到模式、只從光照讀值感覺亮度、側欄模式切換、搜尋句型、SearXNG 結果整理與失敗處理、句型直接搜尋與「模型要求搜尋 → 再回答」兩條路徑、無效動作不宣稱完成。
 - `tests/test_memory_compression.py`：60 分鐘分段、分批壓縮與 episode 摘要、長期記憶的上限與敏感資料過濾、MEMO 實際看到的記憶內容、同時壓縮只寫入一份、模型摘要的解析與繁體轉換。
+- `tests/test_casual_chat.py`：日常聊天不帶入環境資料、聊到相關話題或危險時才帶入、備援回覆不念數值。
 - `tests/test_image_upload.py`：圖片驗證（格式、大小、內容與宣告不符）、圖片送到模型的格式、不保存圖片只留標記、看不到圖時的備援。
 - `tests/test_node_red.py`：Node-RED 流程的漂移、干擾與網頁介面。
 - `memo_demo/tests/browser.mjs`：網頁、Node-RED 干擾、人格、語音輸入輸出。

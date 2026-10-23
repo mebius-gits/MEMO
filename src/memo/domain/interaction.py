@@ -1,6 +1,20 @@
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+
+# Words that bring the room into a chat: comfort, air, light, readings. Everyday chat without
+# them is just chat; the environment speaks through proactive notices instead.
+ENVIRONMENT_TOPIC = re.compile(
+    r"溫度|濕度|溼度|二氧化碳|CO\s*[2₂]|ppm|空氣|悶|好熱|太熱|很熱|熱死|好冷|太冷|很冷|冷死|"
+    r"潮濕|好濕|乾燥|好乾|通風|開窗|窗戶|冷氣|電扇|風扇|除濕|加濕|暖氣|環境|房間|室內|"
+    r"數值|數據|讀值|幾度|多少度|體感|亮|暗|光線|光照|燈|頭暈|頭痛|呼吸|想睡|睏|感測",
+    re.IGNORECASE,
+)
+
+
+def talks_about_environment(text: str) -> bool:
+    return bool(ENVIRONMENT_TOPIC.search(text or ""))
 
 
 class Tone(str, Enum):
@@ -91,6 +105,8 @@ class PreparedInteraction:
     user_prompt: str
     warnings: tuple[str, ...] = ()
     usable_metrics: dict[str, float] = field(default_factory=dict)
+    # False for everyday chat: the room's readings and events were left out of the prompt.
+    environment_relevant: bool = True
 
 
 @dataclass(frozen=True)

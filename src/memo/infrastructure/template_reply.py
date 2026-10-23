@@ -96,6 +96,13 @@ class TemplateReplyGenerator:
                 if request.attention and request.attention.get("level"):
                     text += "現在的狀況還在持續，我會繼續留意。"
                 return Reply(text, EmotionLabel.CONCERNED, 0.4)
+            if not prepared.environment_relevant:
+                # Everyday chat: no readings, no event talk; just own up to the fallback.
+                return Reply(
+                    "我在這裡陪你，不過現在是備援回覆，還沒辦法好好接住這句話，可以再說一次嗎？",
+                    EmotionLabel.FRIENDLY,
+                    0.4,
+                )
             event = request.event
             if event:
                 rule_id = event.rule_evidence.split(":", 1)[0]
