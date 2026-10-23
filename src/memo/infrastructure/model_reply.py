@@ -35,9 +35,16 @@ def parse_content(content):
     """Read the model's JSON reply, tolerating fences, surrounding prose and extra fields.
 
     Only a usable text is required; a bad expression degrades to neutral instead of
-    discarding the whole reply.
+    discarding the whole reply. Some models (Gemma without JSON mode) now and then answer in
+    plain prose; with no braces at all that prose is the reply. Broken JSON stays invalid.
     """
-    result = reply_object(content)
+    try:
+        result = reply_object(content)
+    except ValueError:
+        prose = content.strip().strip("`").strip()
+        if "{" in content or not 1 <= len(prose) <= 2000:
+            raise
+        return prose, EmotionLabel.NEUTRAL, 0.4
     text = result.get("text")
     if not isinstance(text, str) or not 1 <= len(text.strip()) <= 2000:
         # A bare search request still runs; MEMO answers after the results come back.

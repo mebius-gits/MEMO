@@ -309,7 +309,7 @@ flowchart LR
 目前的 BIRC-LLM（Gemma 4）實測要用：`OPENAI_REASONING_EFFORT=none`、`OPENAI_SYSTEM_ROLE=false`、`OPENAI_JSON_MODE=false`，回覆約 0.9 秒。
 
 **回覆處理**
-1. 寬鬆解析：容忍程式碼區塊標記、前後說明文字（即使說明裡也有大括號）、多餘欄位、字串型的 intensity、不認得的表情（改為 neutral）；只有完全沒有可用文字時才判為無效。只附搜尋動作、沒有 text 的回覆仍會去搜尋。
+1. 寬鬆解析：容忍程式碼區塊標記、前後說明文字（即使說明裡也有大括號）、多餘欄位、字串型的 intensity、不認得的表情（改為 neutral）；只有完全沒有可用文字時才判為無效。只附搜尋動作、沒有 text 的回覆仍會去搜尋。模型完全沒附 JSON、只回一段純文字時（Gemma 關掉 JSON 模式偶爾會這樣），直接採用那段文字、表情為 neutral，不再改用備援回覆；有大括號但解析失敗的仍視為無效。
 2. 長度保護：只保留前面完整的句子，最多 80 字。
 3. 繁體保護：模型偶爾混入簡體字。只轉換「僅簡體才有」的字（例如 记→記），兩岸共用的字（干、台、里）保持原樣；但若相鄰是簡體字（表示整個詞是簡體），就跟著整詞轉換（这里→這裡、干净→乾淨），所以正確的「干擾」「台灣」不會被改錯。
 4. 表情：模型可選 neutral、friendly、happy、concerned、confused、surprised、proud（解說數據的專業時刻）、sleepy、alert。主動事件通知的表情由事件決定：恢復為 happy，危險等級為 alert，其他為 concerned。網頁另有 thinking（等待回覆）、listening（錄音中）、error（請求失敗）三個狀態。螢幕只會顯示臉或符號其中一種，不混用：confused 整面顯示「?」、thinking 為轉圈的 loading、listening 為跳動的音量條、alert 為暖紅底大紅「!」並輕微顫動、error 為「ERROR!」；其餘為只有表情的臉。

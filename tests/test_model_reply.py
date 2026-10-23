@@ -76,7 +76,7 @@ def test_model_request_and_validated_output():
     [
         (TimeoutError(), "model_timeout"),
         (HTTPError("http://model", 503, "unavailable", {}, None), "model_unavailable"),
-        (b'{"choices":[{"message":{"content":"not-json"}}]}', "invalid_model_output"),
+        (b'{"choices":[{"message":{"content":"{\\"text\\": "}}]}', "invalid_model_output"),
         (b"x" * 131073, "invalid_model_output"),
     ],
     ids=["timeout", "unavailable", "invalid-json", "oversized"],
@@ -118,7 +118,7 @@ def test_lenient_model_output(content, expected):
 
 
 @pytest.mark.parametrize(
-    "content", ['{"emotion": {"label": "happy"}}', '{"text": ""}', "沒有 JSON"]
+    "content", ['{"emotion": {"label": "happy"}}', '{"text": ""}', '{"text": "壞掉', "  ", "``"]
 )
 def test_model_output_without_text_is_rejected(content):
     with pytest.raises(ValueError):
@@ -228,3 +228,25 @@ def test_reply_object_survives_braces_in_prose_and_bare_search():
     assert extract_action(bare) == {"type": "search", "query": "台北101高度"}
     with pytest.raises(ValueError):
         parse_content('{"action":{"type":"lamp","mode":"off"}}')
+
+
+def test_plain_prose_without_json_is_used_as_the_reply():
+    text, label, intensity = parse_content("欸，你怎麼又問一次呀？就是 508 公尺。")
+    assert text == "欸，你怎麼又問一次呀？就是 508 公尺。"
+    assert label.value == "neutral" and intensity == 0.4
+
+    def opener(request, timeout):
+        content = "欸，你怎麼又問一次呀？就是 508 公尺。"
+        return io.BytesIO(json.dumps({"choices": [{"message": {"content": content}}]}).encode())
+
+    generator = ModelReplyGenerator(
+        Settings(openai_base_url="http://model/v1", openai_model="test", _env_file=None), opener
+    )
+    service = InteractionService(generator)
+    reply = service.respond(
+        service.prepare(
+            InteractionInput("台北101有多高", Personality()), datetime.now(timezone.utc)
+        )
+    )
+    assert reply.source == "model" and reply.fallback_reason is None
+    assert reply.text.startswith("欸，你怎麼又問一次呀") and reply.action is None
