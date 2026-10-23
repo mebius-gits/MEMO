@@ -298,7 +298,8 @@ function cancelRecording() {
 // Start over: the conversation and its summaries are cleared; what MEMO remembers about the
 // person (name, likes, projects) stays, since it belongs to the same browser session.
 $('#new-chat').onclick = async () => {
-  if (chatting || missingApi()) return;
+  if (missingApi()) return;
+  if (chatting) { toast('等 MEMO 回完這句，再重新開始。'); return; }
   if (!confirm('要清除這次的對話，重新開始嗎？\nMEMO 記得的「關於你的事」會保留。')) return;
   try {
     await request(`/api/v1/devices/${encodeURIComponent(activeDevice)}/memory/conversation?session_id=${sessionId}`, { method: 'DELETE' });

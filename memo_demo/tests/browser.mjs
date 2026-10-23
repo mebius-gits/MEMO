@@ -67,6 +67,8 @@ try {
   await page.locator('#mic').click();
   assert.equal((await heard).status(), 200);
   // Start over: confirm, and the stored conversation for this session is gone.
+  // The transcript above is sent as a chat message; start over once MEMO has answered it.
+  await page.waitForFunction(() => !document.querySelector('#send-message').disabled, null, { timeout: 90000 });
   page.once('dialog', dialog => dialog.accept());
   const cleared = page.waitForResponse(response => response.request().method() === 'DELETE' && response.url().includes('/memory/conversation'));
   await page.locator('#new-chat').click();
