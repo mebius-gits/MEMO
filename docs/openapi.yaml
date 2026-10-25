@@ -851,6 +851,46 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/schedules/{job_id}/look:
+    put:
+      tags:
+      - MEMO schedules
+      summary: Update Look
+      description: Change what a look task alerts on, when it speaks, or the part
+        of the frame it sees.
+      operationId: update_look_api_v1_devices__device_id__schedules__job_id__look_put
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LookUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobOutput'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/devices/{device_id}/digest:
     post:
       tags:
@@ -1267,6 +1307,292 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/captures/pending:
+    get:
+      tags:
+      - MEMO vision
+      summary: 現在要拍的照片（拍照任務到期或需要確認）
+      operationId: pending_captures_api_v1_devices__device_id__captures_pending_get
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PendingCaptures'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/captures:
+    post:
+      tags:
+      - MEMO vision
+      summary: 送出拍照任務的照片（或沒有照片的原因），分析、比對並記錄
+      operationId: submit_capture_api_v1_devices__device_id__captures_post
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CaptureInput'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureOutput'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/schedules/{job_id}/trigger:
+    post:
+      tags:
+      - MEMO vision
+      summary: 持續盯著的任務：範圍有變化並穩定了，立刻執行一次
+      operationId: trigger_capture_api_v1_devices__device_id__schedules__job_id__trigger_post
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Job Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureRequest'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/observe:
+    post:
+      tags:
+      - MEMO vision
+      summary: MEMO 自己觀察：送出整個畫面的照片，更新現場狀態與觀察日誌
+      operationId: observe_api_v1_devices__device_id__observe_post
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ObserveInput'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObserveOutput'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/observation:
+    get:
+      tags:
+      - MEMO vision
+      summary: MEMO 現在知道的現場、今天的觀察，以及網頁觀察的節奏
+      operationId: observation_api_v1_devices__device_id__observation_get
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObservationState'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/observation/log:
+    get:
+      tags:
+      - MEMO vision
+      summary: 觀察日誌：鏡頭看到的事、拍照任務的發現、環境事件，新的在前
+      operationId: observation_log_api_v1_devices__device_id__observation_log_get
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      - name: hours
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 720
+          minimum: 1
+          default: 24
+          title: Hours
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          default: 100
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TimelineEntry'
+                title: Response Observation Log Api V1 Devices  Device Id  Observation
+                  Log Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - MEMO vision
+      summary: 清除觀察日誌與 MEMO 記得的現場
+      operationId: clear_observation_log_api_v1_devices__device_id__observation_log_delete
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/devices/{device_id}/vision/observations:
+    get:
+      tags:
+      - MEMO vision
+      summary: 拍照紀錄：答案、人事時地物與動作、照片品質（照片本身不保存）
+      operationId: observations_api_v1_devices__device_id__vision_observations_get
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      - name: job_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            maxLength: 64
+          - type: 'null'
+          title: Job Id
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 20
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ObservationOutput'
+                title: Response Observations Api V1 Devices  Device Id  Vision Observations
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - MEMO vision
+      summary: 清除這個裝置的所有拍照紀錄
+      operationId: clear_observations_api_v1_devices__device_id__vision_observations_delete
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /health/live:
     get:
       tags:
@@ -1316,6 +1642,250 @@ components:
       required:
       - status
       title: Acknowledged
+    CaptureInput:
+      properties:
+        task_id:
+          type: string
+          maxLength: 64
+          minLength: 1
+          title: Task Id
+        attempt:
+          type: integer
+          enum:
+          - 1
+          - 2
+          title: Attempt
+          description: 2 是確認用的第二張照片
+          default: 1
+        image:
+          anyOf:
+          - type: string
+            maxLength: 2800100
+          - type: 'null'
+          title: Image
+          description: data:image/jpeg|png|webp;base64,...，最大 2 MB；只交給模型看，不保存。
+        reference:
+          anyOf:
+          - type: string
+            maxLength: 2800100
+          - type: 'null'
+          title: Reference
+          description: 變化比對的基準照片（只存在瀏覽器），與 image 一起交給模型比較。
+        quality:
+          anyOf:
+          - $ref: '#/components/schemas/CaptureQuality'
+          - type: 'null'
+        captured_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Captured At
+          description: 拍下的時間；與伺服器差太多時改用伺服器時間
+        skip:
+          anyOf:
+          - type: string
+            enum:
+            - camera_off
+            - camera_unavailable
+            - permission_denied
+          - type: 'null'
+          title: Skip
+          description: 沒有照片時的原因；這次執行也會留下紀錄
+        trigger:
+          anyOf:
+          - type: string
+            const: watch
+          - type: 'null'
+          title: Trigger
+          description: watch：網頁持續盯著時看到變化並穩定後觸發，不需要確認照片
+        moment:
+          anyOf:
+          - type: string
+            maxLength: 2800100
+          - type: 'null'
+          title: Moment
+          description: 變化剛開始時的畫面，讓模型描述當時的動作；不保存。
+      additionalProperties: false
+      type: object
+      required:
+      - task_id
+      title: CaptureInput
+    CaptureOutput:
+      properties:
+        status:
+          type: string
+          enum:
+          - done
+          - confirming
+          - queued
+          - skipped
+          - cancelled
+          title: Status
+        decision:
+          anyOf:
+          - type: string
+            enum:
+            - done
+            - confirm
+            - notify
+            - muted
+            - unconfirmed
+            - baseline
+            - skipped
+          - type: 'null'
+          title: Decision
+        result:
+          anyOf:
+          - type: string
+            enum:
+            - 'yes'
+            - 'no'
+            - unknown
+            - seen
+            - skipped
+          - type: 'null'
+          title: Result
+        notice:
+          anyOf:
+          - type: string
+            enum:
+            - alert
+            - repeat
+            - recovered
+            - changed
+            - report
+            - unseen
+          - type: 'null'
+          title: Notice
+        level:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Level
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+        quality_flags:
+          items:
+            type: string
+          type: array
+          title: Quality Flags
+        observation_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Observation Id
+        store_reference:
+          type: boolean
+          title: Store Reference
+          description: true：網頁要把這張照片存成新的基準照片
+          default: false
+        confirm_after_seconds:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Confirm After Seconds
+          description: 要確認時：第二張照片應在第一張之後幾秒拍
+      additionalProperties: false
+      type: object
+      required:
+      - status
+      title: CaptureOutput
+    CaptureQuality:
+      properties:
+        brightness:
+          anyOf:
+          - type: number
+            maximum: 255.0
+            minimum: 0.0
+          - type: 'null'
+          title: Brightness
+          description: 平均亮度 0-255
+        contrast:
+          anyOf:
+          - type: number
+            maximum: 255.0
+            minimum: 0.0
+          - type: 'null'
+          title: Contrast
+          description: 亮度標準差
+        sharpness:
+          anyOf:
+          - type: number
+            maximum: 1000000.0
+            minimum: 0.0
+          - type: 'null'
+          title: Sharpness
+          description: Laplacian 變異數，越小越模糊
+        width:
+          anyOf:
+          - type: integer
+            maximum: 10000.0
+            minimum: 1.0
+          - type: 'null'
+          title: Width
+        height:
+          anyOf:
+          - type: integer
+            maximum: 10000.0
+            minimum: 1.0
+          - type: 'null'
+          title: Height
+      additionalProperties: false
+      type: object
+      title: CaptureQuality
+      description: Measured in the browser on a grey copy of the photo; recorded,
+        never used to retake.
+    CaptureRequest:
+      properties:
+        task_id:
+          type: string
+          title: Task Id
+        job_id:
+          type: string
+          title: Job Id
+        attempt:
+          type: integer
+          enum:
+          - 1
+          - 2
+          title: Attempt
+        mode:
+          type: string
+          enum:
+          - check
+          - change
+          - report
+          title: Mode
+        question:
+          type: string
+          title: Question
+        roi:
+          anyOf:
+          - $ref: '#/components/schemas/Roi'
+          - type: 'null'
+        baseline:
+          type: boolean
+          title: Baseline
+          description: 變化比對還沒有基準：這張照片會成為基準
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+      additionalProperties: false
+      type: object
+      required:
+      - task_id
+      - job_id
+      - attempt
+      - mode
+      - question
+      - baseline
+      - expires_at
+      title: CaptureRequest
     ConversationOutput:
       properties:
         request_id:
@@ -2092,6 +2662,20 @@ components:
           title: Image Attached
           description: 這則訊息附了圖片（圖片本身不保存）
           default: false
+        look_requested:
+          type: boolean
+          title: Look Requested
+          description: MEMO 需要看實物才能回答：網頁拍照後帶著照片再送一次同一句話。
+          default: false
+        mode:
+          anyOf:
+          - type: string
+            enum:
+            - assignment
+            - interaction
+          - type: 'null'
+          title: Mode
+          description: assignment：指派（觀察、回報、問看到什麼），先講事實；interaction：日常互動
         sources:
           items:
             $ref: '#/components/schemas/WebSource'
@@ -2125,6 +2709,7 @@ components:
           - remind
           - summary
           - followup
+          - look
           title: Purpose
         message:
           type: string
@@ -2163,6 +2748,14 @@ components:
           type: string
           format: date-time
           title: Created At
+        look:
+          anyOf:
+          - $ref: '#/components/schemas/LookConfig'
+          - type: 'null'
+        look_state:
+          anyOf:
+          - $ref: '#/components/schemas/LookStateOutput'
+          - type: 'null'
       additionalProperties: false
       type: object
       required:
@@ -2257,6 +2850,142 @@ components:
       - threshold
       - level
       title: LevelThreshold
+    LookConfig:
+      properties:
+        mode:
+          type: string
+          enum:
+          - check
+          - change
+          - report
+          title: Mode
+          description: check：是非題；change：和基準照片比有沒有變化；report：描述畫面，連同環境一起回報
+          default: check
+        question:
+          type: string
+          maxLength: 60
+          minLength: 1
+          title: Question
+          examples:
+          - 使用者是不是駝背？
+          - 桌上的包裹
+        alert_on:
+          type: string
+          enum:
+          - 'yes'
+          - 'no'
+          title: Alert On
+          description: 需要提醒的答案；「電腦有沒有關機」是 no
+          default: 'yes'
+        notify:
+          type: string
+          enum:
+          - on_alert
+          - on_change
+          - always
+          title: Notify
+          description: on_alert：出現、持續或解除需要提醒的答案時說；on_change：答案改變時說；always：每次都說（report
+            一律每次說）
+          default: on_alert
+        roi:
+          anyOf:
+          - $ref: '#/components/schemas/Roi'
+          - type: 'null'
+        watch:
+          type: boolean
+          title: Watch
+          description: change 才有：持續盯著，網頁每 2 秒比對範圍，有變化並穩定後立刻拍照比對
+          default: false
+      additionalProperties: false
+      type: object
+      required:
+      - question
+      title: LookConfig
+    LookStateOutput:
+      properties:
+        last:
+          anyOf:
+          - type: string
+            enum:
+            - 'yes'
+            - 'no'
+            - unknown
+            - seen
+          - type: 'null'
+          title: Last
+        last_summary:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last Summary
+        last_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last At
+        changed_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Changed At
+        alert_streak:
+          type: integer
+          title: Alert Streak
+          default: 0
+        unknown_streak:
+          type: integer
+          title: Unknown Streak
+          default: 0
+        baseline_text:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Baseline Text
+        baseline_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Baseline At
+        changes:
+          type: integer
+          title: Changes
+          default: 0
+      additionalProperties: false
+      type: object
+      title: LookStateOutput
+    LookUpdate:
+      properties:
+        alert_on:
+          anyOf:
+          - type: string
+            enum:
+            - 'yes'
+            - 'no'
+          - type: 'null'
+          title: Alert On
+        notify:
+          anyOf:
+          - type: string
+            enum:
+            - on_alert
+            - on_change
+            - always
+          - type: 'null'
+          title: Notify
+        roi:
+          anyOf:
+          - $ref: '#/components/schemas/Roi'
+          - type: 'null'
+        watch:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Watch
+      additionalProperties: false
+      type: object
+      title: LookUpdate
+      description: Change a look task's settings; a field left out keeps its value,
+        roi null clears it.
     MetricState:
       properties:
         value:
@@ -2376,6 +3105,253 @@ components:
       - observed_at
       - metrics
       title: ObservationInput
+    ObservationOutput:
+      properties:
+        id:
+          type: string
+          title: Id
+        job_id:
+          type: string
+          title: Job Id
+        run:
+          type: integer
+          title: Run
+        attempt:
+          type: integer
+          title: Attempt
+        captured_at:
+          type: string
+          format: date-time
+          title: Captured At
+        mode:
+          type: string
+          enum:
+          - check
+          - change
+          - report
+          title: Mode
+        question:
+          type: string
+          title: Question
+        result:
+          type: string
+          enum:
+          - 'yes'
+          - 'no'
+          - unknown
+          - seen
+          - skipped
+          title: Result
+        detail:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Detail
+        scene:
+          anyOf:
+          - $ref: '#/components/schemas/Scene'
+          - type: 'null'
+        quality:
+          anyOf:
+          - $ref: '#/components/schemas/QualityRecord'
+          - type: 'null'
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+        decision:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Decision
+        notice:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Notice
+        level:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Level
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      - job_id
+      - run
+      - attempt
+      - captured_at
+      - mode
+      - question
+      - result
+      title: ObservationOutput
+    ObservationState:
+      properties:
+        now:
+          anyOf:
+          - $ref: '#/components/schemas/SceneNow'
+          - type: 'null'
+          description: 最近一次看到的現場；null 表示還沒看過
+        today_counts:
+          additionalProperties:
+            type: integer
+          type: object
+          title: Today Counts
+        patrol_minutes:
+          type: integer
+          title: Patrol Minutes
+          description: 網頁例行巡視的間隔
+        min_gap_seconds:
+          type: integer
+          title: Min Gap Seconds
+          description: 兩次觀察的最短間隔
+      additionalProperties: false
+      type: object
+      required:
+      - now
+      - patrol_minutes
+      - min_gap_seconds
+      title: ObservationState
+    ObserveInput:
+      properties:
+        trigger:
+          type: string
+          enum:
+          - patrol
+          - scene_change
+          - person_enter
+          - person_leave
+          title: Trigger
+          description: 為什麼看：例行巡視、畫面變化並穩定、有人出現、有人離開
+        image:
+          anyOf:
+          - type: string
+            maxLength: 2800100
+          - type: 'null'
+          title: Image
+          description: 整個畫面的照片；只交給模型看，不保存。
+        quality:
+          anyOf:
+          - $ref: '#/components/schemas/CaptureQuality'
+          - type: 'null'
+        captured_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Captured At
+        skip:
+          anyOf:
+          - type: string
+            enum:
+            - camera_off
+            - camera_unavailable
+            - permission_denied
+          - type: 'null'
+          title: Skip
+      additionalProperties: false
+      type: object
+      required:
+      - trigger
+      title: ObserveInput
+    ObserveOutput:
+      properties:
+        status:
+          type: string
+          const: recorded
+          title: Status
+        result:
+          type: string
+          enum:
+          - seen
+          - unknown
+          - skipped
+          title: Result
+        summary:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Summary
+        situation:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Situation
+          description: 這次看到的人事地物與動作
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+        quality_flags:
+          items:
+            type: string
+          type: array
+          title: Quality Flags
+        events:
+          items:
+            type: string
+          type: array
+          title: Events
+          description: 和上次相比的事件：start、arrival、departure、animal、animal_gone、lights
+        notice:
+          anyOf:
+          - type: string
+            enum:
+            - arrival
+            - animal
+          - type: 'null'
+          title: Notice
+          description: 要說出來的事；其他事件只記錄
+        observation_id:
+          type: string
+          title: Observation Id
+      additionalProperties: false
+      type: object
+      required:
+      - status
+      - result
+      - observation_id
+      title: ObserveOutput
+    PendingCaptures:
+      properties:
+        requests:
+          items:
+            $ref: '#/components/schemas/CaptureRequest'
+          type: array
+          title: Requests
+        active_jobs:
+          type: integer
+          title: Active Jobs
+          description: 啟用中的拍照任務數
+        watching:
+          items:
+            $ref: '#/components/schemas/Watched'
+          type: array
+          title: Watching
+          description: 持續盯著的任務：網頁每 2 秒比對這些範圍
+      additionalProperties: false
+      type: object
+      required:
+      - requests
+      - active_jobs
+      title: PendingCaptures
+    People:
+      properties:
+        count:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Count
+        description:
+          type: string
+          title: Description
+          default: ''
+      additionalProperties: false
+      type: object
+      title: People
     PersonalityConfig:
       properties:
         name:
@@ -2525,6 +3501,35 @@ components:
       additionalProperties: false
       type: object
       title: ProfileOutput
+    QualityRecord:
+      properties:
+        metrics:
+          additionalProperties:
+            type: number
+          type: object
+          title: Metrics
+        flags:
+          items:
+            type: string
+            enum:
+            - dark
+            - overexposed
+            - low_contrast
+            - blurry
+          type: array
+          title: Flags
+        visibility:
+          anyOf:
+          - type: string
+            enum:
+            - clear
+            - partial
+            - poor
+          - type: 'null'
+          title: Visibility
+      additionalProperties: false
+      type: object
+      title: QualityRecord
     ReadingBucket:
       properties:
         start:
@@ -2615,6 +3620,38 @@ components:
       - co2_ppm
       - quality
       title: ReadingOutput
+    Roi:
+      properties:
+        x:
+          type: number
+          exclusiveMaximum: 1.0
+          minimum: 0.0
+          title: X
+        y:
+          type: number
+          exclusiveMaximum: 1.0
+          minimum: 0.0
+          title: Y
+        w:
+          type: number
+          maximum: 1.0
+          minimum: 0.05
+          title: W
+        h:
+          type: number
+          maximum: 1.0
+          minimum: 0.05
+          title: H
+      additionalProperties: false
+      type: object
+      required:
+      - x
+      - y
+      - w
+      - h
+      title: Roi
+      description: Part of the frame to look at, as fractions of the raw (unmirrored)
+        camera frame.
     RuleOutput:
       properties:
         trigger:
@@ -2762,6 +3799,78 @@ components:
       - hold_seconds
       - recover_hold_seconds
       title: RuleUpdate
+    Scene:
+      properties:
+        people:
+          $ref: '#/components/schemas/People'
+        animals:
+          items:
+            type: string
+          type: array
+          title: Animals
+        activity:
+          type: string
+          title: Activity
+          default: ''
+        place:
+          type: string
+          title: Place
+          default: ''
+        objects:
+          items:
+            type: string
+          type: array
+          title: Objects
+        actions:
+          items:
+            type: string
+          type: array
+          title: Actions
+        lighting:
+          type: string
+          title: Lighting
+          default: ''
+      additionalProperties: false
+      type: object
+      title: Scene
+      description: '人（people）、事（activity）、地（place）、物（objects）、動作（actions）與光線；
+
+        時是 captured_at。'
+    SceneNow:
+      properties:
+        seen_at:
+          type: string
+          title: Seen At
+        people:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: People
+        people_detail:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: People Detail
+        animals:
+          items:
+            type: string
+          type: array
+          title: Animals
+        lighting:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Lighting
+        summary:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Summary
+      additionalProperties: false
+      type: object
+      required:
+      - seen_at
+      title: SceneNow
     ScheduleCreate:
       properties:
         kind:
@@ -2777,6 +3886,7 @@ components:
           enum:
           - remind
           - summary
+          - look
           title: Purpose
           default: remind
         message:
@@ -2786,6 +3896,11 @@ components:
           default: ''
           examples:
           - 喝水
+        look:
+          anyOf:
+          - $ref: '#/components/schemas/LookConfig'
+          - type: 'null'
+          description: purpose 為 look 時必填
         minutes:
           anyOf:
           - type: integer
@@ -2880,6 +3995,9 @@ components:
           - remind
           - summary
           - followup
+          - look
+          - arrival
+          - animal
           title: Event Status
         status:
           type: string
@@ -2890,6 +4008,11 @@ components:
           - acknowledged
           - cancelled
           - expired
+          - awaiting_capture
+          - confirming
+          - analyzing
+          - done
+          - skipped
           title: Status
         created_at:
           type: string
@@ -3024,6 +4147,37 @@ components:
       - sequence
       - metrics
       title: TelemetryInput
+    TimelineEntry:
+      properties:
+        at:
+          type: string
+          format: date-time
+          title: At
+        source:
+          type: string
+          enum:
+          - observe
+          - look
+          - environment
+          title: Source
+        kind:
+          type: string
+          title: Kind
+        text:
+          type: string
+          title: Text
+        spoken:
+          type: boolean
+          title: Spoken
+      additionalProperties: false
+      type: object
+      required:
+      - at
+      - source
+      - kind
+      - text
+      - spoken
+      title: TimelineEntry
     Tone:
       type: string
       enum:
@@ -3057,6 +4211,24 @@ components:
       - msg
       - type
       title: ValidationError
+    Watched:
+      properties:
+        job_id:
+          type: string
+          title: Job Id
+        question:
+          type: string
+          title: Question
+        roi:
+          anyOf:
+          - $ref: '#/components/schemas/Roi'
+          - type: 'null'
+      additionalProperties: false
+      type: object
+      required:
+      - job_id
+      - question
+      title: Watched
     WebSource:
       properties:
         title:

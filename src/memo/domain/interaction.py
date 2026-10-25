@@ -4,10 +4,11 @@ from datetime import datetime
 from enum import Enum
 
 # Words that bring the room into a chat: comfort, air, light, readings. Everyday chat without
-# them is just chat; the environment speaks through proactive notices instead.
+# them is just chat; the environment speaks through proactive notices instead. "房間" alone is
+# not one of them: 「房間好亂」 is about tidying, not the air.
 ENVIRONMENT_TOPIC = re.compile(
     r"溫度|濕度|溼度|二氧化碳|CO\s*[2₂]|ppm|空氣|悶|好熱|太熱|很熱|熱死|好冷|太冷|很冷|冷死|"
-    r"潮濕|好濕|乾燥|好乾|通風|開窗|窗戶|冷氣|電扇|風扇|除濕|加濕|暖氣|環境|房間|室內|"
+    r"潮濕|好濕|乾燥|好乾|通風|開窗|窗戶|冷氣|電扇|風扇|除濕|加濕|暖氣|環境|"
     r"數值|數據|讀值|幾度|多少度|體感|亮|暗|光線|光照|燈|頭暈|頭痛|呼吸|想睡|睏|感測",
     re.IGNORECASE,
 )
@@ -96,6 +97,16 @@ class InteractionInput:
     # Compressed memory: older part of this conversation, and a few earlier conversations.
     conversation_summary: str | None = None
     earlier: tuple[dict, ...] = ()
+    # Look tasks and what their photos recorded (answers, scenes, quality, daily counts).
+    vision: tuple[dict, ...] = ()
+    # What MEMO's own observation knows: the space now and today's observation log.
+    situation: dict | None = None
+    # "assignment" (watch, report, recall: facts first, from records) or "interaction"
+    # (everyday chat); None for proactive notices.
+    mode: str | None = None
+    # Time budget for the model on this reply; None uses the configured timeout. Look
+    # notices use a short one so MEMO speaks within seconds, falling back to a template.
+    timeout_seconds: float | None = None
 
 
 @dataclass(frozen=True)

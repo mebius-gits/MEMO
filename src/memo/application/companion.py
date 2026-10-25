@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Protocol
 
 from memo.domain.interaction import EmotionLabel, InteractionInput
+from memo.domain.observation import conversation_mode
 from memo.domain.schedule import parse_intent, validate_action
 
 UNSET_ACTION = (
@@ -50,12 +51,17 @@ class CompanionService:
         # Common phrasings are handled deterministically before the model is asked.
         actions_done = []
         web_search = None
+        look_requested = False
         parsed = parse_intent(text)
         if parsed and parsed["type"] == "search":
             web_search = self.search(parsed["query"])
         elif parsed and (done := self.memory.apply_action(device_id, parsed, session_id)):
             actions_done.append(done)
         context = self.memory.context(device_id, session_id)
+        # An assignment (watch, report, recall) is answered from records; everyday chat is chat.
+        questions = [task.get("question", "") for task in context.get("vision", ())]
+        mode = "assignment" if parsed and parsed["type"] != "search" else None
+        mode = mode or conversation_mode(text, questions)
 
         def ask():
             prepared = self.interaction.prepare(
@@ -67,6 +73,7 @@ class CompanionService:
                     actions_done=tuple(actions_done),
                     web_search=web_search,
                     image=image,
+                    mode=mode,
                     **context,
                 ),
                 datetime.now(timezone.utc),
@@ -87,8 +94,13 @@ class CompanionService:
                 # The second answer may not trigger another search or action.
                 web_search = self.search(proposed["query"])
                 prepared, reply = ask()
+            elif proposed["type"] == "look":
+                # Only the page has a camera: it takes a photo and asks again with it. A
+                # message that already carries a picture never asks for another one.
+                look_requested = image is None
             elif done := self.memory.apply_action(device_id, proposed, session_id):
                 actions_done.append(done)
+                mode = "assignment"
         response = {
             "request_id": request_id,
             "character": "MEMO",
@@ -103,6 +115,8 @@ class CompanionService:
             "actions": actions_done,
             # The image itself is never kept; history only notes that one was shown.
             "image_attached": bool(image),
+            "look_requested": look_requested,
+            "mode": mode,
             "sources": [
                 {"title": item["title"], "url": item["url"], "source": item["source"]}
                 for item in (web_search or {}).get("results", [])

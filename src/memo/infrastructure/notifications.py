@@ -8,9 +8,16 @@ from sqlalchemy import or_, select, update
 from memo.domain.environment import SENSOR_RULE, suggestions_for
 from memo.domain.interaction import EventContext, InteractionInput
 from memo.infrastructure.database import DeviceRow, EventStateRow, ScheduledJobRow, TaskMemoryRow
-from memo.infrastructure.environment_events import SCHEDULE_RULE, attention_context, current_task
+from memo.infrastructure.environment_events import (
+    OBSERVE_RULE,
+    SCHEDULE_RULE,
+    attention_context,
+    current_task,
+)
 from memo.infrastructure.memory import SqlMemoryRepository
+from memo.infrastructure.observation import notice_context as observed_context
 from memo.infrastructure.schedules import schedule_context
+from memo.infrastructure.vision import LOOK, notice_context
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +52,50 @@ SCHEDULE_PROMPTS = {
 }
 
 
-def notice_request(session, task, memory, tz):
+# Look notices: what the photo showed is in schedule; the level sets how direct MEMO is.
+LOOK_PROMPTS = {
+    "alert": (
+        "你剛照使用者的要求拍照確認「{question}」，結果是需要提醒的情況（見 schedule 的 detail"
+        " 與 scene）。用你的人格輕輕提醒他，一到兩句，不要說教。"
+    ),
+    "repeat": (
+        "「{question}」的情況已經連續 {streak} 次了，今天第 {today_count} 次，"
+        "這是第 {level} 級提醒。level 2 說得直接一點並提到今天的次數；"
+        "level 3 先提醒，再問他要不要先暫停這個拍照任務。"
+        "換個說法，不要重複 recent_notices 裡說過的話。"
+    ),
+    "recovered": "上次提醒的「{question}」已經改善了（見 schedule），用一句話肯定他。",
+    "changed": (
+        "你拍照比對發現「{question}」有變化（見 schedule 的 detail 與 scene），"
+        "用一兩句告訴使用者哪裡變了，不要猜原因。"
+    ),
+    "report": (
+        "這是使用者要你定時拍照回報的「{question}」，用一兩句說你看到的結果"
+        "（schedule 的 result、detail 與 scene），result 和 previous 不同時說出變化。"
+    ),
+    "scene": (
+        "這是使用者要你定時回報的「{question}」。先用一句說畫面（schedule 的 detail 與 scene），"
+        "和 previous_detail 比有明顯不同就說出來；再用一句說空氣、溫濕度或光線"
+        "（usable_metrics 與 attention），沒狀況就簡短帶過。不要從畫面猜溫度或空氣。"
+    ),
+    "unseen": (
+        "你連續幾次拍照都看不清楚「{question}」（見 schedule 的 quality），"
+        "用一句話請使用者確認鏡頭、角度或光線。"
+    ),
+}
+
+
+# Notices from MEMO's own observation; schedule carries the event and the situation.
+OBSERVE_PROMPTS = {
+    "arrival": (
+        "鏡頭看到有人回到這裡了（離開約 {away_minutes} 分鐘）。用你的個性打個招呼，一到兩句；"
+        "while_away 裡有值得說的事就挑一件說，空氣或溫濕度有狀況（attention）也提一句。"
+    ),
+    "animal": "鏡頭看到{detail}。用一句話告訴使用者，口吻輕鬆，可以有你的小邏輯，不要猜原因。",
+}
+
+
+def notice_request(session, task, memory, tz, look_timeout=None):
     """Build the model input for a queued notice, environmental or scheduled."""
     device_id = task.device_id
     # Proactive tasks do not borrow an arbitrary person's conversation session.
@@ -60,7 +110,32 @@ def notice_request(session, task, memory, tz):
         jobs=context["jobs"],
         # Notices may call the person by name; they never see conversation history.
         profile=memory.latest_profile(device_id),
+        # Who is here, as far as the camera knows: a notice is for the people present.
+        situation=context.get("situation"),
     )
+    if task.rule_id == OBSERVE_RULE:
+        schedule = observed_context(session, task, tz)
+        prompt = OBSERVE_PROMPTS.get(schedule["notice"], OBSERVE_PROMPTS["animal"])
+        return InteractionInput(
+            user_message=prompt.format(**({"away_minutes": "一段時間", "detail": ""} | schedule)),
+            schedule=schedule,
+            attention=context["attention"],
+            timeout_seconds=look_timeout,
+            **common,
+        )
+    if task.rule_id == SCHEDULE_RULE and task.event_status == LOOK:
+        job = session.get(ScheduledJobRow, task.event_id)
+        schedule = notice_context(session, job, task, tz, datetime.now(timezone.utc))
+        notice = (
+            "scene" if schedule.get("mode") == "report" and schedule["notice"] == "report" else None
+        )
+        prompt = LOOK_PROMPTS.get(notice or schedule["notice"], LOOK_PROMPTS["report"])
+        return InteractionInput(
+            user_message=prompt.format(**schedule),
+            schedule=schedule,
+            timeout_seconds=look_timeout,
+            **common,
+        )
     if task.rule_id == SCHEDULE_RULE:
         job = session.get(ScheduledJobRow, task.event_id)
         return InteractionInput(
@@ -87,7 +162,7 @@ def notice_request(session, task, memory, tz):
     )
 
 
-def dispatch_one(sessions, interaction, timeout=30, tz="Asia/Taipei"):
+def dispatch_one(sessions, interaction, timeout=30, tz="Asia/Taipei", look_timeout=None):
     now = datetime.now(timezone.utc)
     lease = now + timedelta(seconds=timeout + 15)
     with sessions() as session:
@@ -135,7 +210,7 @@ def dispatch_one(sessions, interaction, timeout=30, tz="Asia/Taipei"):
             session.commit()
             return True
         device_id = task.device_id
-        request = notice_request(session, task, SqlMemoryRepository(session, tz), tz)
+        request = notice_request(session, task, SqlMemoryRepository(session, tz), tz, look_timeout)
     reply = interaction.respond(interaction.prepare(request, now))
     with sessions() as session:
         session.execute(
@@ -158,10 +233,10 @@ def dispatch_one(sessions, interaction, timeout=30, tz="Asia/Taipei"):
     return True
 
 
-def run_dispatcher(stop, sessions, interaction, timeout, tz="Asia/Taipei"):
+def run_dispatcher(stop, sessions, interaction, timeout, tz="Asia/Taipei", look_timeout=None):
     while not stop.is_set():
         try:
-            worked = dispatch_one(sessions, interaction, timeout, tz)
+            worked = dispatch_one(sessions, interaction, timeout, tz, look_timeout)
         except Exception:
             # Never log model payloads, conversations, or credentials.
             logger.error("Notification dispatch failed; durable task will be retried")

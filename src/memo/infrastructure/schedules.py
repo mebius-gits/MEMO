@@ -2,6 +2,7 @@
 
 A due run becomes an ordinary task_memory notice (rule_id "schedule"), so the existing
 dispatcher, web bubble, speech and BMO expression handle it like any proactive notice.
+A look job's run first waits for the web page's photo (memo.infrastructure.vision).
 """
 
 import logging
@@ -24,6 +25,8 @@ from memo.infrastructure.environment_events import (
     reading_metrics,
     sweep_stale,
 )
+from memo.infrastructure.observation import prune as prune_log
+from memo.infrastructure.vision import LOOK, expire_waiting, forget, prune, start_run
 
 logger = logging.getLogger(__name__)
 OPEN = ("active", "paused")
@@ -76,11 +79,16 @@ class ScheduleRepository:
             if action["kind"] == "followup"
             else None,
             status="active",
-            next_run_at=first_run(action, now, self.tz),
+            # A change task photographs its baseline right away; the first change counts.
+            next_run_at=now
+            if (action.get("look") or {}).get("mode") == "change"
+            else first_run(action, now, self.tz),
             runs=0,
             session_id=session_id,
             created_at=now,
             updated_at=now,
+            look=action.get("look"),
+            look_state={} if action.get("look") else None,
         )
         self.session.add(job)
         return job
@@ -135,6 +143,8 @@ class ScheduleRepository:
         status = {"cancel": "cancelled", "pause": "paused", "resume": "active"}[kind]
         for job in jobs:
             job.status, job.updated_at = status, now
+            if status == "cancelled" and job.purpose == LOOK:
+                forget(self.session, job.id)
             if kind == "resume" and job.next_run_at and job.next_run_at <= now:
                 job.next_run_at = following_run(
                     job.kind, job.minutes, job.time_of_day, job.next_run_at, now, self.tz
@@ -163,9 +173,10 @@ def schedule_context(session, job: ScheduledJobRow, tz: str) -> dict:
     return context
 
 
-def fire_due(sessions, now: datetime, tz: str) -> int:
+def fire_due(sessions, now: datetime, tz: str, vision_unavailable: str | None = None) -> int:
     """Turn due runs into queued notices. The conditional update makes each run fire once,
-    even with several API processes polling the same database."""
+    even with several API processes polling the same database. A look job's run asks the
+    page for a photo instead, or records why none can be taken (``vision_unavailable``)."""
     fired = 0
     with sessions() as session:
         due = session.scalars(
@@ -178,6 +189,9 @@ def fire_due(sessions, now: datetime, tz: str) -> int:
             following = following_run(
                 job.kind, job.minutes, job.time_of_day, job.next_run_at, now, tz
             )
+            if following is None and job.runs == 0 and (job.look or {}).get("mode") == "change":
+                # A one-off change task: the first run was its baseline, now the comparison.
+                following = job.next_run_at + timedelta(minutes=job.minutes)
             run = job.runs + 1
             claimed = session.execute(
                 update(ScheduledJobRow)
@@ -195,6 +209,10 @@ def fire_due(sessions, now: datetime, tz: str) -> int:
                 .execution_options(synchronize_session=False)
             )
             if claimed.rowcount != 1:
+                continue
+            if job.purpose == LOOK:
+                start_run(session, job, run, now, tz, vision_unavailable)
+                fired += 1
                 continue
             session.add(
                 TaskMemoryRow(
@@ -216,14 +234,26 @@ def fire_due(sessions, now: datetime, tz: str) -> int:
     return fired
 
 
-def run_scheduler(stop, sessions, tz):
-    """Every second: fire due jobs, and notice sensors that went silent between readings."""
+def run_scheduler(stop, sessions, tz, vision_unavailable: str | None = None):
+    """Every second: fire due jobs, close look runs that got no photo in time, and notice
+    sensors that went silent between readings. Hourly: drop expired look records and log."""
+    pruned = None
     while not stop.is_set():
         now = datetime.now(timezone.utc)
         try:
-            fire_due(sessions, now, tz)
+            fire_due(sessions, now, tz, vision_unavailable)
         except Exception:
             logger.error("Scheduler pass failed; due jobs will be retried")
+        try:
+            with sessions() as session:
+                expire_waiting(session, now, tz)
+                if pruned is None or now - pruned >= timedelta(hours=1):
+                    prune(session, now, tz)
+                    prune_log(session, now)
+                    session.commit()
+                    pruned = now
+        except Exception:
+            logger.error("Look run upkeep failed; it will run again")
         try:
             sweep_stale(sessions, now)
         except Exception:

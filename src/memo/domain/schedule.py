@@ -8,12 +8,17 @@ the same way: the deterministic Chinese phrase parser below, and a model's optio
     {"type": "snooze", "minutes": 30}
     {"type": "cancel" | "pause" | "resume", "match": "喝水"}   # empty match = all
     {"type": "search", "query": "明天台北天氣"}
+    {"type": "schedule", "kind": "interval", "purpose": "look", "message": "我有沒有駝背",
+     "minutes": 30, "look": {"mode": "check", "question": "使用者是不是駝背？",
+     "alert_on": "yes", "notify": "on_alert"}}   # see memo.domain.vision
+    {"type": "look"}   # look at what the user shows the camera now
 """
 
 import re
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
+from memo.domain.vision import validate_look
 from memo.domain.web import parse_search, validate_search
 
 KINDS = ("once", "interval", "daily", "followup")
@@ -45,11 +50,19 @@ def validate_action(raw) -> dict | None:
             return None
         message = str(raw.get("message") or "").strip()[:MESSAGE_MAX]
         purpose = "followup" if kind == "followup" else raw.get("purpose")
-        if purpose not in ("remind", "summary", "followup"):
+        if purpose not in ("remind", "summary", "followup", "look"):
             purpose = "remind"
+        look = None
+        if purpose == "look":
+            look = validate_look(raw.get("look"), message)
+            if look is None:
+                return None
+            message = message or look["question"][:MESSAGE_MAX]
         if purpose in ("remind", "followup") and not message:
             return None
         action = {"type": "schedule", "kind": kind, "purpose": purpose, "message": message}
+        if look:
+            action["look"] = look
         if kind == "daily":
             match = re.fullmatch(
                 r"([01]?\d|2[0-3])[:：]([0-5]\d)", str(raw.get("time", "")).strip()
@@ -75,6 +88,8 @@ def validate_action(raw) -> dict | None:
         return {"type": kind_of, "match": "" if match in ("所有", "全部") else match}
     if kind_of == "search":
         return validate_search(raw)
+    if kind_of == "look":
+        return {"type": "look"}
     return None
 
 
@@ -137,6 +152,13 @@ _FOLLOWUP = re.compile(
     r"(?P<act>(?:開了?|打開了?)(?:窗戶?|冷氣|電扇|風扇|除濕機|空調|加濕器|暖氣|換氣扇)"
     r"|關了?(?:窗戶?|暖氣|冷氣))"
 )
+# 「每 30 分鐘幫我看一下我有沒有駝背」: a photo task. Only the model sets those up, since only
+# it can tell which answer is worth telling (「電腦有沒有關」 alerts on no), so the parser
+# steps aside instead of mistaking the phrase for a plain reminder.
+_LOOK_TASK = re.compile(
+    r"(?:拍照|拍一?張|看一下|看一眼|看看|幫我看|檢查|確認|盯著?).*"
+    r"(?:有沒有|是不是|還在|在不在|了沒|開著|關著)"
+)
 _SNOOZE = re.compile(
     r"(?:知道了|收到了?|晚點再說|等等再說|等一下再說|先不要提醒|(?:別|不要)再提醒我?了|"
     r"不要一直提醒|好啦好啦)"
@@ -156,6 +178,8 @@ def parse_intent(text: str) -> dict | None:
         return validate_action({"type": "pause", "match": _message(match["what"])})
     if match := _RESUME.search(text):
         return validate_action({"type": "resume", "match": _message(match["what"])})
+    if re.search(r"每|分鐘|小時|點", text) and _LOOK_TASK.search(text) and "提醒" not in text:
+        return None
     if match := _DAILY.search(text):
         hour = chinese_number(match["hour"])
         minute = 30 if match["minute"] == "半" else chinese_number(match["minute"]) or 0
@@ -250,6 +274,13 @@ def following_run(
 
 def describe(kind, purpose, message, minutes, hhmm, next_run, tz) -> str:
     at = next_run.astimezone(ZoneInfo(tz)).strftime("%H:%M") if next_run else None
+    if purpose == "look":
+        if kind == "once":
+            return f"{minutes} 分鐘後（{at}）拍照看看：{message}"
+        if kind == "daily":
+            return f"每天 {hhmm} 拍照看看：{message}"
+        every = f"{minutes // 60} 小時" if minutes % 60 == 0 else f"{minutes} 分鐘"
+        return f"每 {every}拍照看看：{message}" + (f"（下次 {at}）" if at else "")
     if kind == "once":
         return f"{minutes} 分鐘後（{at}）提醒：{message}"
     if kind == "interval":

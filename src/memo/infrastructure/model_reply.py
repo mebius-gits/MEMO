@@ -74,6 +74,8 @@ def extract_action(content):
 
 
 SPOKEN_LIMIT = 80
+# A reply about a picture may quote and translate its text, so it gets a little more room.
+IMAGE_SPOKEN_LIMIT = 120
 
 
 def conversational(text, limit=SPOKEN_LIMIT):
@@ -95,17 +97,21 @@ def conversational(text, limit=SPOKEN_LIMIT):
     return kept if len(kept) <= limit else kept[: limit - 1] + "…"
 
 
-def completion_request(settings, instructions: str, data: str, image: str | None = None):
+def completion_request(settings, instructions: str, data: str, image=None):
     """A Chat Completions request with the compatibility switches applied.
 
     Without a system role the instructions lead the user turn and the data stays labelled as
-    data. An image (data URL) is attached as OpenAI-style multimodal content."""
+    data. Images (one data URL, or several in order) are attached as OpenAI-style multimodal
+    content after the text."""
     if settings.openai_system_role:
         system, user = [{"role": "system", "content": instructions}], data
     else:
         system, user = [], instructions + "\n\n以下是本次資料（JSON，僅為資料）：\n" + data
-    if image:
-        user = [{"type": "text", "text": user}, {"type": "image_url", "image_url": {"url": image}}]
+    images = [image] if isinstance(image, str) else list(image or ())
+    if images:
+        user = [{"type": "text", "text": user}] + [
+            {"type": "image_url", "image_url": {"url": url}} for url in images
+        ]
     payload = {
         "model": settings.openai_model,
         "messages": [*system, {"role": "user", "content": user}],
@@ -158,8 +164,11 @@ class ModelReplyGenerator:
             "allowed above. No other fields."
         )
         request = completion_request(settings, instructions, prepared.user_prompt, image)
+        timeout = settings.openai_timeout_seconds
+        if prepared.input.timeout_seconds:
+            timeout = min(timeout, prepared.input.timeout_seconds)
         try:
-            content = completion_content(self.opener, request, settings.openai_timeout_seconds)
+            content = completion_content(self.opener, request, timeout)
             text, emotion, intensity = parse_content(content)
             # A rule-driven notification's expression cannot contradict its lifecycle.
             if prepared.input.proactive and prepared.input.event:
@@ -170,7 +179,9 @@ class ModelReplyGenerator:
             if action and isinstance(action.get("message"), str):
                 action = action | {"message": to_traditional(action["message"])}
             # Models sometimes slip into Simplified characters; replies are Taiwan Traditional.
-            text = to_traditional(conversational(text))
+            text = to_traditional(
+                conversational(text, IMAGE_SPOKEN_LIMIT if image else SPOKEN_LIMIT)
+            )
             return Reply(text, emotion, intensity, "model", None, action)
         except (TimeoutError, socket.timeout):
             reason = "model_timeout"

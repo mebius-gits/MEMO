@@ -20,11 +20,13 @@ from memo.domain.environment import (
     connectivity_sweep,
     expire,
 )
+from memo.domain.observation import nobody_here
 from memo.infrastructure.database import (
     DeviceRow,
     DeviceSettingRow,
     EventStateRow,
     EventUpdateRow,
+    ObservationStateRow,
     RuleConfigRow,
     ScheduledJobRow,
     TaskMemoryRow,
@@ -33,6 +35,8 @@ from memo.infrastructure.database import (
 # A notice stays deliverable this long; newer notices for the same rule supersede it sooner.
 NOTICE_TTL = timedelta(minutes=10)
 SCHEDULE_RULE = "schedule"
+# Notices from MEMO's own observation (someone back, an animal): memo.infrastructure.observation.
+OBSERVE_RULE = "observe"
 METRICS = ("temperature_c", "humidity_pct", "co2_ppm", "illuminance_lux")
 
 
@@ -147,8 +151,12 @@ def record(session, row, device_id, rule_id, before, state, kind, notice, at, po
     else:
         session.add(EventStateRow(device_id=device_id, rule_id=rule_id, state=state))
     # The state still advances when policy keeps MEMO quiet, so silence is not retried.
-    spoken = bool(notice) and policy.allows(
-        notice, state.get("level"), at, spoken_last_hour(session, device_id, at)
+    # When the camera recently saw nobody, only danger is spoken; the rest waits in the log
+    # and the welcome-back digest.
+    spoken = (
+        bool(notice)
+        and policy.allows(notice, state.get("level"), at, spoken_last_hour(session, device_id, at))
+        and (state.get("level") == "danger" or not nobody_seen(session, device_id, at))
     )
     if kind:
         detail = {"spoken": spoken} if notice else {}
@@ -281,7 +289,14 @@ def attention_context(rule_id: str, state: dict, notice: str | None = None) -> d
     }
 
 
+def nobody_seen(session, device_id, at) -> bool:
+    row = session.get(ObservationStateRow, device_id)
+    return nobody_here(row.state if row else None, at)
+
+
 def current_task(session, task, now):
+    if task.rule_id == OBSERVE_RULE:
+        return task.expires_at > now
     if task.rule_id == SCHEDULE_RULE:
         job = session.get(ScheduledJobRow, task.event_id)
         return task.expires_at > now and job is not None and job.status != "cancelled"

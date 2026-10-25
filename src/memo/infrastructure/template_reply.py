@@ -44,6 +44,50 @@ def followup_words(schedule) -> str:
     return f"你{action}之後，" + "、".join(parts) + "。"
 
 
+LOOK_EMOTIONS = {
+    "alert": EmotionLabel.CONCERNED,
+    "repeat": EmotionLabel.CONCERNED,
+    "recovered": EmotionLabel.HAPPY,
+    "changed": EmotionLabel.SURPRISED,
+    "report": EmotionLabel.FRIENDLY,
+    "unseen": EmotionLabel.CONFUSED,
+}
+
+
+def look_words(schedule) -> str:
+    """A look notice without the model: what the photo showed, in one sentence."""
+    notice, detail = schedule.get("notice"), schedule.get("detail")
+    if notice == "unseen":
+        quality = "、".join(schedule.get("quality") or [])
+        why = f"，照片{quality}" if quality else ""
+        return f"我連續幾次拍照都看不清楚{why}，可以幫我看一下鏡頭嗎？"
+    if notice == "recovered":
+        return f"剛剛看了一下，{detail}，好多了！" if detail else "剛剛看了一下，已經好多了！"
+    if notice == "changed":
+        return f"我拍照比對發現有變化：{detail or '和之前不一樣了'}。"
+    if notice in ("alert", "repeat"):
+        count = schedule.get("today_count") or 0
+        times = f"（今天第 {count} 次）" if count > 1 else ""
+        return f"提醒一下：{detail or schedule['message']}{times}。"
+    if schedule.get("mode") == "report":
+        return f"我看了一下：{detail or '這次看不太清楚'}。"
+    answer = {"yes": "是", "no": "不是", "unknown": "看不出來"}.get(schedule.get("result"), "")
+    return f"我看了一下「{schedule['question']}」：{detail or answer}。"
+
+
+def observed_words(schedule) -> str:
+    """An observation notice without the model."""
+    if schedule.get("notice") == "arrival":
+        text = "你回來啦！"
+        away = schedule.get("while_away") or []
+        if away:
+            first = away[0]
+            text += f"你不在的時候，{first['at']} {first['event']}"
+            text += f"：{first['detail']}。" if first.get("detail") else "。"
+        return text
+    return f"我看到{schedule.get('detail') or '有動物跑進畫面'}了。"
+
+
 def search_words(search) -> str:
     """One sentence from the first answer or result, naming where it came from."""
     status = search.get("status")
@@ -81,6 +125,19 @@ class TemplateReplyGenerator:
                 )
             if request.schedule:
                 schedule = request.schedule
+                if schedule["purpose"] == "observe":
+                    emotion = (
+                        EmotionLabel.HAPPY
+                        if schedule.get("notice") == "arrival"
+                        else EmotionLabel.SURPRISED
+                    )
+                    return Reply(observed_words(schedule), emotion, 0.5)
+                if schedule["purpose"] == "look":
+                    emotion = LOOK_EMOTIONS.get(schedule.get("notice"), EmotionLabel.FRIENDLY)
+                    text = look_words(schedule)
+                    if schedule.get("mode") == "report" and prepared.usable_metrics:
+                        text += "環境：" + spoken(prepared.usable_metrics) + "。"
+                    return Reply(text, emotion, 0.5)
                 if schedule["purpose"] == "followup":
                     return Reply(followup_words(schedule), EmotionLabel.FRIENDLY, 0.5)
                 if schedule["purpose"] == "summary":

@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     openai_json_mode: bool = True
     # Send uploaded images to the model; turn off for models without image input.
     openai_vision: bool = True
+    # Look tasks aim to speak within about 20 s of a photo: each photo's analysis and the
+    # spoken notice get short budgets; a slow notice falls back to a template.
+    openai_vision_timeout_seconds: float = Field(default=8, gt=0, le=120)
+    look_notice_timeout_seconds: float = Field(default=5, gt=0, le=60)
 
 
 class AttentionSettings(BaseSettings):

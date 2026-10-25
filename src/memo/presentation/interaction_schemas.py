@@ -152,6 +152,14 @@ class InteractionResponse(ModelReply):
         description="後端為這則訊息完成的動作（設定提醒、延後、取消等），以中文描述。",
     )
     image_attached: bool = Field(default=False, description="這則訊息附了圖片（圖片本身不保存）")
+    look_requested: bool = Field(
+        default=False,
+        description="MEMO 需要看實物才能回答：網頁拍照後帶著照片再送一次同一句話。",
+    )
+    mode: Literal["assignment", "interaction"] | None = Field(
+        default=None,
+        description="assignment：指派（觀察、回報、問看到什麼），先講事實；interaction：日常互動",
+    )
     sources: list[WebSource] = Field(
         default_factory=list, description="這則回覆參考的網路搜尋結果（SearXNG），供網頁顯示來源。"
     )

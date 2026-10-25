@@ -13,12 +13,15 @@ from pydantic import AwareDatetime, Field
 from memo.application.interaction import InteractionService
 from memo.domain.interaction import InteractionInput
 from memo.domain.schedule import following_run, validate_action
+from memo.domain.vision import validate_look
 from memo.infrastructure.database import ScheduledJobRow
 from memo.infrastructure.schedules import job_description
+from memo.infrastructure.vision import LOOK, forget
 from memo.presentation.interaction_routes import get_interaction_service
 from memo.presentation.interaction_schemas import EmotionOutput
 from memo.presentation.memory_routes import Memory
 from memo.presentation.schemas import Schema
+from memo.presentation.vision_schemas import LookConfig, LookStateOutput, LookUpdate
 
 router = APIRouter(prefix="/api/v1/devices", tags=["MEMO schedules"])
 
@@ -30,8 +33,9 @@ DIGEST_PROMPT = (
 
 class ScheduleCreate(Schema):
     kind: Literal["once", "interval", "daily", "followup"]
-    purpose: Literal["remind", "summary"] = "remind"
+    purpose: Literal["remind", "summary", "look"] = "remind"
     message: str = Field(default="", max_length=60, examples=["喝水"])
+    look: LookConfig | None = Field(default=None, description="purpose 為 look 時必填")
     minutes: int | None = Field(
         default=None, ge=1, le=1440, description="once／followup：幾分鐘後；interval：間隔"
     )
@@ -47,7 +51,7 @@ class ScheduleUpdate(Schema):
 class JobOutput(Schema):
     id: str
     kind: Literal["once", "interval", "daily", "followup"]
-    purpose: Literal["remind", "summary", "followup"]
+    purpose: Literal["remind", "summary", "followup", "look"]
     message: str
     minutes: int | None
     time_of_day: str | None
@@ -56,6 +60,8 @@ class JobOutput(Schema):
     runs: int
     description: str
     created_at: datetime
+    look: LookConfig | None = None
+    look_state: LookStateOutput | None = None
 
 
 class DigestRequest(Schema):
@@ -70,12 +76,13 @@ class DigestOutput(Schema):
 
 
 def job_output(job: ScheduledJobRow, tz: str) -> dict:
-    fields = ("id", "kind", "purpose", "message", "minutes", "time_of_day", "status")
+    fields = ("id", "kind", "purpose", "message", "minutes", "time_of_day", "status", "look")
     return {key: getattr(job, key) for key in fields} | {
         "next_run_at": job.next_run_at,
         "runs": job.runs,
         "created_at": job.created_at,
         "description": job_description(job, tz),
+        "look_state": job.look_state,
     }
 
 
@@ -96,6 +103,10 @@ def list_schedules(device_id: str, memory: Memory):
 @router.post("/{device_id}/schedules", response_model=JobOutput, status_code=201)
 def create_schedule(device_id: str, payload: ScheduleCreate, memory: Memory):
     memory.require_device(device_id)
+    if (payload.purpose == LOOK) != (payload.look is not None):
+        raise HTTPException(422, "拍照任務（purpose look）要附上 look，其他排程不可附。")
+    if payload.purpose == LOOK and payload.kind == "followup":
+        raise HTTPException(422, "拍照任務只能是 once、interval 或 daily。")
     action = validate_action({"type": "schedule", **payload.model_dump(exclude_none=True)})
     if action is None:
         raise HTTPException(422, "排程參數不合法：請確認間隔、時間與提醒內容。")
@@ -121,10 +132,32 @@ def update_schedule(device_id: str, job_id: str, payload: ScheduleUpdate, memory
     return job_output(job, memory.tz)
 
 
+@router.put("/{device_id}/schedules/{job_id}/look", response_model=JobOutput)
+def update_look(device_id: str, job_id: str, payload: LookUpdate, memory: Memory):
+    """Change what a look task alerts on, when it speaks, or the part of the frame it sees."""
+    job = owned_job(memory, device_id, job_id)
+    if job.purpose != LOOK:
+        raise HTTPException(409, "Not a look task")
+    if job.status not in ("active", "paused"):
+        raise HTTPException(409, "Schedule already finished")
+    changes = payload.model_dump(include=payload.model_fields_set)
+    look = validate_look(job.look | changes)
+    if look is None:
+        raise HTTPException(422, "拍照任務設定不合法。")
+    if look["mode"] == "change" and look.get("roi") != job.look.get("roi"):
+        # A new region needs a new reference photo.
+        job.look_state = (job.look_state or {}) | {"baseline_text": None, "baseline_at": None}
+    job.look, job.updated_at = look, datetime.now(timezone.utc)
+    memory.session.commit()
+    return job_output(job, memory.tz)
+
+
 @router.delete("/{device_id}/schedules/{job_id}", status_code=204)
 def delete_schedule(device_id: str, job_id: str, memory: Memory):
     job = owned_job(memory, device_id, job_id)
     job.status, job.updated_at = "cancelled", datetime.now(timezone.utc)
+    if job.purpose == LOOK:
+        forget(memory.session, job.id)
     memory.session.commit()
 
 

@@ -117,7 +117,7 @@ class ScheduledJobRow(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     device_id: Mapped[str] = mapped_column(ForeignKey("devices.id"), index=True)
     kind: Mapped[str] = mapped_column(String(16))  # once | interval | daily | followup
-    purpose: Mapped[str] = mapped_column(String(16))  # remind | summary | followup
+    purpose: Mapped[str] = mapped_column(String(16))  # remind | summary | followup | look
     message: Mapped[str] = mapped_column(String(120))
     minutes: Mapped[int | None] = mapped_column(Integer)
     time_of_day: Mapped[str | None] = mapped_column(String(5))
@@ -130,6 +130,82 @@ class ScheduledJobRow(Base):
     session_id: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(UTCDateTime())
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime())
+    # Look tasks only: what to look at (memo.domain.vision.validate_look), and what the last
+    # photos showed (last answer, streaks, a change task's baseline description).
+    look: Mapped[dict | None] = mapped_column(JSON)
+    look_state: Mapped[dict | None] = mapped_column(JSON)
+
+
+class VisionObservationRow(Base):
+    """One photo of a look task, or a run that took none. The photo itself is never stored;
+    the record keeps the answer, the scene (人事時地物、動作) and the photo's quality."""
+
+    __tablename__ = "vision_observations"
+    __table_args__ = (Index("ix_vision_observations_job", "job_id", "captured_at"),)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    device_id: Mapped[str] = mapped_column(ForeignKey("devices.id"), index=True)
+    job_id: Mapped[str] = mapped_column(String(64))
+    task_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    run: Mapped[int] = mapped_column(Integer)
+    attempt: Mapped[int] = mapped_column(Integer)  # 1, or 2 for the confirming photo
+    captured_at: Mapped[datetime] = mapped_column(UTCDateTime())
+    mode: Mapped[str] = mapped_column(String(8))  # check | change
+    question: Mapped[str] = mapped_column(String(120))
+    result: Mapped[str] = mapped_column(String(16))  # yes | no | unknown | skipped
+    detail: Mapped[str | None] = mapped_column(Text)
+    scene: Mapped[dict | None] = mapped_column(JSON)
+    # {"metrics": brightness/contrast/sharpness/size, "flags": ["dark", ...], "visibility"}
+    quality: Mapped[dict | None] = mapped_column(JSON)
+    # Why there is no usable answer: camera_off, no_capture, model_timeout, quiet_hours...
+    reason: Mapped[str | None] = mapped_column(String(32))
+    # done | confirm | notify | muted | unconfirmed | baseline | skipped
+    decision: Mapped[str | None] = mapped_column(String(16))
+    notice: Mapped[str | None] = mapped_column(String(16))
+    level: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime())
+
+
+class VisionDailyRow(Base):
+    """Per look task and local day: how often each answer came up, kept longer than photos'
+    records so MEMO can say 「今天第 4 次」 or compare with last week."""
+
+    __tablename__ = "vision_daily"
+    job_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    day: Mapped[str] = mapped_column(String(10), primary_key=True)  # local YYYY-MM-DD
+    device_id: Mapped[str] = mapped_column(ForeignKey("devices.id"), index=True)
+    counts: Mapped[dict] = mapped_column(JSON)  # {"yes": 3, "no": 9, "unknown": 1, ...}
+    notices: Mapped[int] = mapped_column(Integer, default=0)
+    first_alert_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    last_alert_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    longest_streak: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime())
+
+
+class ObservationStateRow(Base):
+    """What MEMO last saw in the space (people, animals, light) and the bookkeeping for what
+    is worth saying (when it became empty, when each animal was last mentioned)."""
+
+    __tablename__ = "observation_states"
+    device_id: Mapped[str] = mapped_column(ForeignKey("devices.id"), primary_key=True)
+    state: Mapped[dict | None] = mapped_column(JSON)
+    memory: Mapped[dict | None] = mapped_column(JSON)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime())
+
+
+class ObservationEventRow(Base):
+    """The observation log: what happened in the space and when, and whether MEMO said it."""
+
+    __tablename__ = "observation_events"
+    __table_args__ = (Index("ix_observation_events_device", "device_id", "at"),)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    device_id: Mapped[str] = mapped_column(ForeignKey("devices.id"))
+    at: Mapped[datetime] = mapped_column(UTCDateTime())
+    # start | arrival | departure | animal | animal_gone | lights | watched_change | task
+    kind: Mapped[str] = mapped_column(String(24))
+    detail: Mapped[str] = mapped_column(Text, default="")
+    spoken: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Where it came from: the observation record, the look task, the situation summary.
+    data: Mapped[dict | None] = mapped_column(JSON)
 
 
 class DeviceSettingRow(Base):

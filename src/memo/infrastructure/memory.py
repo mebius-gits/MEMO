@@ -36,7 +36,9 @@ from memo.infrastructure.memory_compression import (
     stored_profile,
     turns_after,
 )
+from memo.infrastructure.observation import OBSERVE, situation_context
 from memo.infrastructure.schedules import ScheduleRepository, job_description
+from memo.infrastructure.vision import device_facts
 
 # Marks MEMO's own proactive messages inside the conversation history.
 PROACTIVE = "（主動提醒）"
@@ -148,6 +150,8 @@ class SqlMemoryRepository:
         )
         attention = attention_context(active.rule_id, active.state) if active else None
         jobs = tuple(job_description(job, self.tz) for job in self.schedules.open_jobs(device_id))
+        vision = device_facts(self.session, device_id, self.tz, datetime.now(timezone.utc))
+        situation = situation_context(self.session, device_id, self.tz, datetime.now(timezone.utc))
         # End the read transaction before a potentially slow model request.
         self.session.rollback()
         return dict(
@@ -160,6 +164,8 @@ class SqlMemoryRepository:
             task_memory=tasks,
             attention=attention,
             jobs=jobs,
+            vision=vision,
+            situation=situation,
         )
 
     def conversation(self, device_id, session_id, now):
@@ -317,6 +323,10 @@ class SqlMemoryRepository:
             if task.rule_id == SCHEDULE_RULE:
                 job = self.session.get(ScheduledJobRow, task.event_id)
                 item["what"] = job.message if job else "排程提醒"
+            elif task.rule_id == OBSERVE:
+                item["what"] = "鏡頭看到的事：" + (
+                    "有人回來" if task.event_status == "arrival" else "有動物出現"
+                )
             else:
                 item["what"] = SUBJECTS.get(task.rule_id, task.rule_id)
             missed.append(item)

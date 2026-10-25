@@ -16,11 +16,35 @@ class TaskOutput(Schema):
     event_version: int
     rule_id: str
     # Environment notices: active / escalated / reminder / resolved.
-    # Scheduled jobs (rule_id "schedule"): remind / summary / followup.
+    # Scheduled jobs (rule_id "schedule"): remind / summary / followup / look.
+    # MEMO's own observation (rule_id "observe"): arrival / animal.
     event_status: Literal[
-        "active", "escalated", "reminder", "resolved", "remind", "summary", "followup"
+        "active",
+        "escalated",
+        "reminder",
+        "resolved",
+        "remind",
+        "summary",
+        "followup",
+        "look",
+        "arrival",
+        "animal",
     ]
-    status: Literal["queued", "generating", "ready", "acknowledged", "cancelled", "expired"]
+    # Look runs wait for a photo (awaiting_capture, confirming, analyzing) and end done or
+    # skipped when there is nothing to say.
+    status: Literal[
+        "queued",
+        "generating",
+        "ready",
+        "acknowledged",
+        "cancelled",
+        "expired",
+        "awaiting_capture",
+        "confirming",
+        "analyzing",
+        "done",
+        "skipped",
+    ]
     created_at: datetime
     expires_at: datetime
     response: NotificationReply | None
