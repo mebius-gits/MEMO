@@ -214,6 +214,16 @@ flowchart LR
 - **隱私**：圖片不寫進資料庫或記錄。對話紀錄只在回覆標記 `image_attached`，之後的對話歷史顯示「（附了一張圖片）」，所以 MEMO 能接著聊「剛剛那張圖」，但不會再看到圖本身。
 - **看不到時**：沒設定模型、模型失敗，或 `OPENAI_VISION=false` 時（`fallback_reason` 為 `vision_unavailable`），MEMO 會說「我現在看不到這張圖片」，不會亂猜。
 
+### 4.7 鏡頭：觀察、理解與回報
+
+鏡頭打開後 MEMO 就一直在觀察（預設關閉）。眼睛跟著人、螢幕表情回應人的表情、待機時揮手回應，都在瀏覽器裡用 MediaPipe 完成，不呼叫模型。需要模型的有：
+
+- **自己觀察**：網頁每 2 秒比對畫面，畫面變了並穩定、有人出現或離開、每 15 分鐘巡視時，請模型描述畫面（`POST /observe`）。描述會更新現場狀態，和上次比產生事件（有人出現、動物出現…）寫進觀察日誌；有人離開一陣子後回來、有動物出現時才說話。鏡頭最近確定沒有人時，非危險的環境通知只記錄。
+- **立即辨識與現場回報**：「我手上拿的是什麼」倒數拍照；「現在這邊怎樣」馬上拍照，連同環境回報。
+- **拍照任務**：`purpose: "look"` 的排程，分成是非題（check）、變化比對（change，可以持續盯著）、情況回報（report）。照片不保存，每次執行都記錄人、事、時、地、物、動作與照片品質。
+
+細節見 [vision.md](vision.md)。
+
 ## 5. 派送器與提示組裝
 
 ### 5.1 派送
@@ -222,14 +232,14 @@ flowchart LR
 
 是否「仍有效」（`current_task`）的判斷：
 - **環境通知**：事件 ID 與 version 都沒變、狀態仍符合通知種類、最近 30 秒內有新讀值，而且還沒超過 10 分鐘有效期限。
-- **排程通知**：工作沒有被取消，而且還沒超過有效期限。
+- **排程通知**：工作沒有被取消，而且還沒超過有效期限。拍照任務在等照片時（`awaiting_capture`、`confirming`、`analyzing`）不會被派送器領取，確定要說話才轉成 `queued`。
 
 主動通知使用裝置**最後一次對話用的人格**（存在 `device_settings`），所以主動提醒和對話的口吻一致。
 
 ### 5.2 提示結構
 
 **system（固定規則）**
-1. 身分、年齡與人格：MEMO 明確知道自己是 MEMO（被問就答 MEMO，不提代理注入的其他身分或開發單位）；個性設定為十五、六歲的少年，平常直率有活力，講到數據時切換成冷靜精準的小專家，形成「專業但還是少年」的反差；使用者選的人格疊加在這個設定上，作為說話風格。
+1. 身分與個性：MEMO 明確知道自己是 MEMO（被問就答 MEMO，不提代理注入的其他身分或開發單位），是會自己觀察這個空間、理解並回報的桌上小夥伴。個性天真、有自己的小邏輯、偶爾吐槽，但會陪你一起做事（附五段語氣範例，見 [vision.md](vision.md) 第 2 節）；使用者選的人格疊加在這個個性上，作為說話風格。對話分成指派（觀察、回報、問看到什麼：先講事實）與互動（日常聊天），提示裡的 `mode` 標明是哪一種。
 2. 事實邊界：只引用 `usable_metrics` 與事件依據；缺值不當成零；建議只能從 `approved_suggestions` 挑。
 3. 動作邊界：只有 `actions_done` 列出的才能說「已完成」；非主動訊息可附 `action` 欄位，並說明格式。
 4. 關注語氣：依 `attention` 的等級調整（注意輕聲、警戒明確、危險直接）；重複提醒要換說法。
@@ -382,8 +392,12 @@ sequenceDiagram
 | `conversation_memory` | id | 依 session 保存的對話（request_id 用來防止重送） |
 | `memory_summaries` | id | 壓縮後的對話：running（這次對話較早部分）或 episode（已結束的一次對話），含涵蓋的回合範圍與時間 |
 | `user_profiles` | device_id + session_id | 長期記憶「關於你的事」：name、preferences、projects、other |
+| `vision_observations` | id | 拍照任務的每張照片（或沒拍到的原因）：答案、detail、情境（人事時地物、動作）、品質、決定；保留 30 天，不存照片 |
+| `vision_daily` | job_id + day | 拍照任務每天各答案的次數、提醒次數、最長連續次數；保留 180 天 |
+| `observation_states` | device_id | MEMO 最近一次看到的現場（人數、動物、光線、摘要）與「該不該說」的紀錄 |
+| `observation_events` | id | 觀察日誌：有人出現或離開、動物、光線、看守的東西被動、任務的發現，以及有沒有說出來；保留 30 天 |
 
-通知狀態：`queued → generating → ready → acknowledged`；被取代或失效時為 `cancelled`，過期為 `expired`。
+通知狀態：`queued → generating → ready → acknowledged`；被取代或失效時為 `cancelled`，過期為 `expired`。拍照任務的執行先經過 `awaiting_capture → analyzing（→ confirming → analyzing）`，沒什麼要說時結束在 `done`，沒拍到時是 `skipped`。
 排程狀態：`active ⇄ paused → done | cancelled`。
 
 ## 10. API
@@ -407,6 +421,14 @@ sequenceDiagram
 | GET／PUT | `/api/v1/rules`、`/api/v1/rules/{id}` | 規則門檻（見 3.6） |
 | GET／PUT | `/api/v1/devices/{id}/settings` | 人格、勿擾時段、每小時上限；`effective` 為實際生效值 |
 | GET／PUT | `/api/v1/devices/{id}/lamp` | 檯燈模式（見 4.4） |
+| GET | `/api/v1/devices/{id}/captures/pending` | 拍照任務現在要拍的照片（見 4.7） |
+| POST | `/api/v1/devices/{id}/captures` | 送出照片或沒拍到的原因 → 比對結果 |
+| GET／DELETE | `/api/v1/devices/{id}/vision/observations` | 拍照紀錄 |
+| PUT | `/api/v1/devices/{id}/schedules/{job}/look` | 拍照任務的提醒答案、何時說話、拍照範圍、是否持續盯著 |
+| POST | `/api/v1/devices/{id}/schedules/{job}/trigger` | 持續盯著的任務立即執行一次 |
+| POST | `/api/v1/devices/{id}/observe` | MEMO 自己看一眼（見 4.7） |
+| GET | `/api/v1/devices/{id}/observation` | 現在的現場與今天的觀察 |
+| GET／DELETE | `/api/v1/devices/{id}/observation/log` | 觀察日誌 |
 
 完整規格見 [openapi.yaml](openapi.yaml)。
 
@@ -421,6 +443,7 @@ sequenceDiagram
 | `SEARCH_URL` | （空） | SearXNG 位址；本機 `http://localhost:8080`，Compose 內自動設為 `http://searxng:8080` |
 | `SEARCH_TIMEOUT_SECONDS`／`SEARCH_MAX_RESULTS` | 6／3 | 搜尋逾時與交給模型的結果筆數 |
 | `OPENAI_*` | — | 見第 6 節 |
+| `OPENAI_VISION_TIMEOUT_SECONDS`／`LOOK_NOTICE_TIMEOUT_SECONDS` | 8／5 | 拍照任務每張照片的分析時間、通知的說話時間（見 [vision.md](vision.md)） |
 
 Compose 會把前三項同時傳給 api 和 environment-worker：規則在 worker 裡執行，兩邊的判斷必須一致。`QUIET_HOURS` 與 `MAX_PROACTIVE_PER_HOUR` 是伺服器預設值，每個裝置可用 `PUT /settings` 覆寫；兩個程序都從資料庫讀取，不需重啟。
 
@@ -438,6 +461,10 @@ Compose 會把前三項同時傳給 api 和 environment-worker：規則在 worke
 | 網頁內容夾帶指令 | 搜尋結果標示為資料，指令一律不照做；只用摘要，不開連結 |
 | 程序重啟 | 通知、排程、規則狀態都存在資料庫；租約到期後由別的程序接手 |
 | 多個 API 程序 | 排程用條件式更新，派送用租約，同一筆不會處理兩次 |
+| 拍照任務沒拍到照片 | 2 分鐘後記錄 `no_capture`；鏡頭沒開、權限被拒、模型不支援看圖都會留下紀錄 |
+| 勿擾時段 | 照常觀察、拍照、記錄；只有看守的東西被動了（和危險等級的環境事件）會說出來 |
+| 鏡頭看到沒有人 | 非危險的環境通知只記錄，等人回來時補說 |
+| 一張照片誤判 | 新狀況要 6 秒後的第二張照片答案相同才說；不同就記為 `unconfirmed` |
 
 ## 13. 測試
 
@@ -450,10 +477,13 @@ Compose 會把前三項同時傳給 api 和 environment-worker：規則在 worke
 - `tests/test_casual_chat.py`：日常聊天不帶入環境資料、聊到相關話題或危險時才帶入、備援回覆不念數值。
 - `tests/test_image_upload.py`：圖片驗證（格式、大小、內容與宣告不符）、圖片送到模型的格式、不保存圖片只留標記、看不到圖時的備援。
 - `tests/test_node_red.py`：Node-RED 流程的漂移、干擾與網頁介面。
-- `memo_demo/tests/browser.mjs`：網頁、Node-RED 干擾、人格、語音輸入輸出。
+- `tests/test_vision.py`、`tests/test_vision_api.py`：拍照任務的比對、紀錄、確認、通知、立即辨識（見 [vision.md](vision.md)）。
+- `tests/test_observation.py`：自己觀察、現場狀態與觀察日誌、什麼值得說、指派與互動、看守與回報任務。
+- `memo_demo/tests/perception.test.mjs`：眼睛、表情、揮手、表情仲裁、照片品質（`npm test`）。
+- `memo_demo/tests/browser.mjs`：網頁、Node-RED 干擾、人格、語音輸入輸出、鏡頭。
 
 ## 14. 尚未涵蓋
 
-- 人體感測：目前不知道有沒有人在，只能靠勿擾時段與發話上限。
+- 人體感測：沒開鏡頭時不知道有沒有人在，只能靠勿擾時段與發話上限。
 - 實體裝置輸出：MQTT `commands`／`acks` 還沒做，提醒只送到網頁。
 - PM2.5：接上之前，不產生依賴室外空氣品質的開窗建議。
