@@ -108,23 +108,33 @@ export function createMemoScene(container) {
   lettering.rotation.z = -Math.PI / 2;
 
   // Limbs: thin capsules with rounded ends; legs stretch forward on the floor, hands rest beside the body.
-  function limb(points, radius, color) {
+  function limb(points, radius, color, parent = root) {
     const curve = new THREE.CatmullRomCurve3(points.map(p => new THREE.Vector3(...p)));
     const material = toon(color);
-    mesh(new THREE.TubeGeometry(curve, 40, radius, 16, false), material, root, 0, 0, 0, limbOutline);
-    mesh(new THREE.SphereGeometry(radius, 16, 12), material, root, ...points[0]);
+    mesh(new THREE.TubeGeometry(curve, 40, radius, 16, false), material, parent, 0, 0, 0, limbOutline);
+    mesh(new THREE.SphereGeometry(radius, 16, 12), material, parent, ...points[0]);
     return material;
   }
   const feet = [];
+  // The arm nearer the default view waves back; it hangs from a pivot at its shoulder.
+  const WAVE_SIDE = -1;
+  let wavingArm = null;
   for (const sign of [-1, 1]) {
     const legMaterial = limb([[sign * .45, .16, 0], [sign * .47, .11, .7], [sign * .52, .1, 1.45], [sign * .56, .16, 1.88]], .09, COLORS.leg);
     const foot = mesh(new THREE.SphereGeometry(.11, 24, 16), legMaterial, root, sign * .57, .2, 1.92, limbOutline);
     foot.scale.set(1, 1.35, 1.1); feet.push(foot);
-    const armMaterial = limb([[sign * (W / 2 - .02), 1.05, .15], [sign * 1.2, .82, .3], [sign * 1.3, .4, .55], [sign * 1.34, .14, .8]], .075, COLORS.arm);
-    const hand = mesh(new THREE.SphereGeometry(.12, 24, 16), armMaterial, root, sign * 1.36, .1, .88, limbOutline);
+    const shoulder = [sign * (W / 2 - .02), 1.05, .15];
+    let arm = root, at = point => point;
+    if (sign === WAVE_SIDE) {
+      arm = wavingArm = new THREE.Group();
+      arm.position.set(...shoulder); root.add(arm);
+      at = point => point.map((value, i) => value - shoulder[i]);
+    }
+    const armMaterial = limb([shoulder, [sign * 1.2, .82, .3], [sign * 1.3, .4, .55], [sign * 1.34, .14, .8]].map(at), .075, COLORS.arm, arm);
+    const hand = mesh(new THREE.SphereGeometry(.12, 24, 16), armMaterial, arm, ...at([sign * 1.36, .1, .88]), limbOutline);
     hand.scale.set(1, .5, 1.2);
     for (const spread of [-.6, 0, .6]) {
-      const finger = mesh(new THREE.CapsuleGeometry(.03, .08, 4, 10), armMaterial, root, sign * 1.36 + Math.sin(spread) * .15, .07, .88 + Math.cos(spread) * .15, limbOutline);
+      const finger = mesh(new THREE.CapsuleGeometry(.03, .08, 4, 10), armMaterial, arm, ...at([sign * 1.36 + Math.sin(spread) * .15, .07, .88 + Math.cos(spread) * .15]), limbOutline);
       finger.rotation.set(Math.PI / 2, 0, -spread);
     }
   }
@@ -195,6 +205,8 @@ export function createMemoScene(container) {
   const headAnchor = new THREE.Vector3(W / 2 - .1, H + .3, FRONT);
   let mood = 'neutral', intensity = .4, talking = false, paused = matchMedia('(prefers-reduced-motion: reduce)').matches;
   let lastFace = '', frameId;
+  // Pupil offset in screen pixels (eyes follow the person), the photo countdown, the wave.
+  let gaze = { x: 0, y: 0 }, countdown = null, waveStart = null;
   // The screen shows either a face (eyes, mouth, optional brows/blush/sweat) or, for a few
   // states, a full-screen symbol instead of the face — never both.
   const EXPRESSIONS = {
@@ -208,6 +220,7 @@ export function createMemoScene(container) {
     confused: { screen: 'question' },
     thinking: { screen: 'loading' },
     listening: { screen: 'wave' },
+    looking: { screen: 'look' },
     alert: { screen: 'alert' },
     error: { screen: 'error' },
   };
@@ -228,6 +241,13 @@ export function createMemoScene(container) {
         ctx.arc(512 + Math.cos(angle) * 170, 363 + Math.sin(angle) * 170, 34, 0, Math.PI * 2); ctx.fill();
       }
       ctx.globalAlpha = 1;
+    } else if (kind === 'look') {
+      // A viewfinder while MEMO takes a photo, with the countdown inside it.
+      ctx.strokeStyle = FACE; ctx.lineWidth = 30;
+      for (const [x, y, dx, dy] of [[250, 140, 1, 1], [774, 140, -1, 1], [250, 586, 1, -1], [774, 586, -1, -1]]) line([[x, y + dy * 110], [x, y], [x + dx * 110, y]], 30);
+      ctx.fillStyle = FACE;
+      if (countdown) { ctx.font = bold(300); ctx.fillText(String(countdown), 512, 380); }
+      else { ctx.beginPath(); ctx.arc(512, 363, 70, 0, Math.PI * 2); ctx.fill(); }
     } else if (kind === 'wave') {
       // Level bars, like a recorder listening.
       ctx.fillStyle = FACE;
@@ -248,7 +268,7 @@ export function createMemoScene(container) {
     const look = EXPRESSIONS[mood] || EXPRESSIONS.neutral;
     // Animated symbols redraw ~10 times a second; faces only when something changes.
     const frame = ANIMATED.has(look.screen) && !paused ? Math.floor(performance.now() / 100) : 0;
-    const faceKey = look.screen ? `${look.screen}-${frame}` : `${mood}-${blink}-${mouthOpen}`;
+    const faceKey = look.screen ? `${look.screen}-${frame}-${countdown}` : `${mood}-${blink}-${mouthOpen}-${gaze.x},${gaze.y}`;
     if (lastFace === faceKey) return;
     lastFace = faceKey;
     ctx.clearRect(0, 0, 1024, 726);
@@ -257,8 +277,8 @@ export function createMemoScene(container) {
     ctx.beginPath(); ctx.roundRect(14, 14, 996, 698, 64); ctx.fill(); ctx.stroke();
     ctx.fillStyle = FACE; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     if (look.screen) { symbol(look.screen, frame); faceTexture.needsUpdate = true; return; }
-    const eyeY = 300;
-    [330, 694].forEach((x, side) => {
+    const eyeY = 300 + gaze.y;
+    [330 + gaze.x, 694 + gaze.x].forEach((x, side) => {
       const eyes = blink && look.eyes !== 'closed' ? 'blink' : look.eyes;
       ctx.beginPath();
       if (eyes === 'blink') line([[x - 30, eyeY + 6], [x + 30, eyeY + 6]]);
@@ -306,6 +326,7 @@ export function createMemoScene(container) {
     faceTexture.needsUpdate = true;
   }
 
+  const WAVE_SECONDS = 1.8;
   let elapsed = 0, previous = performance.now();
   function animate(now) {
     const delta = Math.min((now - previous) / 1000, .05); previous = now;
@@ -317,6 +338,15 @@ export function createMemoScene(container) {
     // Confused tilts its head; alert trembles slightly; otherwise a gentle sway.
     body.rotation.z = mood === 'confused' ? -.07 : mood === 'alert' && !paused ? Math.sin(elapsed * 26) * .012 : Math.sin(elapsed * .7) * .008 * intensity;
     feet.forEach((foot, i) => { foot.rotation.x = paused ? 0 : Math.sin(elapsed * 2.2 + i * 1.4) * .12 * (mood === 'happy' ? 2 : 1); });
+    // Waving back: the arm rises, swings a few times and comes down again.
+    if (waveStart !== null) {
+      const t = (now - waveStart) / 1000;
+      if (t >= WAVE_SECONDS || paused) { waveStart = null; wavingArm.rotation.z = 0; }
+      else {
+        const up = Math.min(1, t / .35, (WAVE_SECONDS - t) / .35);
+        wavingArm.rotation.z = WAVE_SIDE * (up * 2.3 + up * Math.sin(t * 14) * .28);
+      }
+    }
     drawFace(!paused && elapsed % 5 > 4.82, talking && !paused && Math.floor(performance.now() / 140) % 2 === 1);
     easeLamp(delta * 3.5);
     controls.update(); renderer.render(scene, camera);
@@ -338,6 +368,12 @@ export function createMemoScene(container) {
   return {
     setEmotion(label, amount) { mood = label; intensity = amount; },
     setTalking(value) { talking = value; },
+    // Pupil offset in screen pixels, from perception.js's gaze.
+    setGaze(offset) { gaze = { x: offset.x, y: offset.y }; },
+    // The number shown in the viewfinder while counting down to a photo (null: none).
+    setCountdown(value) { countdown = value; },
+    wave() { if (!paused && waveStart === null) waveStart = performance.now(); },
+    get waving() { return waveStart !== null; },
     // Desk lamp: off | dim | warm | day.
     setLamp(mode) { lampTarget = LAMP_MODES[mode] || LAMP_MODES.day; },
     toggleMotion() { paused = !paused; return paused; },

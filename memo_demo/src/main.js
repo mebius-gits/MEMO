@@ -1,6 +1,11 @@
 import './style.css';
 import { createMemoScene } from './scene.js';
 import { createSpeech } from './speech.js';
+import { createCamera } from './camera.js';
+import { startTracking } from './vision.js';
+import { createLookRunner } from './looks.js';
+import { references } from './references.js';
+import { MIRROR, OWN_FACES, REPLY_HOLD, createExpressionReader, createGaze, createWaveDetector, screenFace, spokenText, wantsLook, wantsReport } from './perception.js';
 
 const $ = selector => document.querySelector(selector);
 const ICONS = {
@@ -17,10 +22,11 @@ const ICONS = {
   mute: '<path d="M4 9v6h4l5 4V5L8 9zM17 9l4 6M21 9l-4 6"/>',
   image: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-9 8"/>',
   newChat: '<path d="M4 5h16v11H9l-5 4z"/><path d="M12 8v5M9.5 10.5h5"/>',
+  camera: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
 };
 const icon = name => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]}</svg>`;
 for (const el of document.querySelectorAll('[data-icon]')) el.innerHTML = icon(el.dataset.icon);
-for (const [id, name] of [['reset-camera', 'replay'], ['pause-motion', 'pause'], ['send-message', 'send'], ['mic', 'mic'], ['attach', 'image'], ['new-chat', 'newChat']]) $(`#${id}`).innerHTML = icon(name);
+for (const [id, name] of [['reset-camera', 'replay'], ['pause-motion', 'pause'], ['send-message', 'send'], ['mic', 'mic'], ['attach', 'image'], ['new-chat', 'newChat'], ['camera-toggle', 'camera']]) $(`#${id}`).innerHTML = icon(name);
 const storage = { get(key) { try { return localStorage.getItem(key); } catch { return null; } }, set(key, value) { try { localStorage.setItem(key, value); } catch { /* Private browsers may block storage. */ } } };
 // Backend origin comes only from VITE_API_URL (read when Vite starts or builds).
 // The page follows the device Node-RED is sending for; room01 until Node-RED reports otherwise.
@@ -41,7 +47,7 @@ $('#pause-motion').onclick = () => motionButton(companion?.toggleMotion());
 // Voice: replies and proactive notices are read aloud through the local speech service (VITE_SPEECH_URL).
 const speechBase = (import.meta.env.VITE_SPEECH_URL || '').trim().replace(/\/$/, '');
 let talkingNow = false;
-const speech = speechBase ? createSpeech(speechBase, value => { talkingNow = value; companion?.setTalking(value); }) : null;
+const speech = speechBase ? createSpeech(speechBase, value => { talkingNow = value; companion?.setTalking(value); if (!value) lastReplyAt = performance.now(); }) : null;
 let voiceOn = storage.get('memo.voice') !== 'off';
 function voiceButton() {
   const label = voiceOn ? '關閉語音朗讀' : '開啟語音朗讀';
@@ -67,10 +73,12 @@ function placeBubble() {
   }
   requestAnimationFrame(placeBubble);
 }
-function say(text, { quote = '', waiting = false, voice = false, sources = [] } = {}) {
+function say(text, { quote = '', waiting = false, voice = false, sources = [], spoken = text, report = false } = {}) {
   // Anything new on screen interrupts what MEMO was saying; only replies and notices are spoken.
-  if (voice && voiceOn) speech?.speak(text); else speech?.stop();
+  if (voice && voiceOn) speech?.speak(spoken); else speech?.stop();
   $('#bubble-quote').textContent = quote; $('#bubble-quote').hidden = !quote;
+  // An answer to an assignment (watch, report, what happened) is marked as a report.
+  $('#bubble-tag').hidden = !report;
   $('#bubble-text').textContent = text;
   // Web answers show where they came from; the links open the source page.
   const links = sources.filter((item, index) => sources.findIndex(other => other.source === item.source) === index).map(item => {
@@ -107,7 +115,7 @@ function normalizeUrl(value) {
 async function request(path, options = {}, base = apiBase) {
   if (!base) throw new Error('尚未設定 VITE_API_URL。');
   let response;
-  try { response = await fetch(`${base}${path}`, { ...options, signal: AbortSignal.timeout(/\/(interaction|digest)$/.test(path) ? 45000 : 12000), headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers } }); }
+  try { response = await fetch(`${base}${path}`, { ...options, signal: AbortSignal.timeout(/\/(interaction|digest|captures)$/.test(path) ? 45000 : 12000), headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers } }); }
   catch { throw new Error('無法連接後端。請檢查網址、HTTPS、CORS 或網路連線。'); }
   if (!response.ok) {
     const error = new Error(response.status === 404 ? '找不到這個裝置或 API，請確認後端已更新。' : `後端回應錯誤（${response.status}），請稍後再試。`);
@@ -159,6 +167,8 @@ async function refresh(showErrors = false) {
     readings = resultReadings; connection(true, '已連接後端'); renderReadings();
     await syncLamp(selected);
     await syncCompanion(selected, currentGeneration);
+    if (performance.now() - looksSyncedAt > 15000) syncLooks(selected).catch(() => {});
+    if (performance.now() - observationSyncedAt > 15000) syncObservation(selected).catch(() => {});
   } catch (error) { if (currentGeneration !== generation) return; connection(false, '後端連線中斷'); $('#freshness').classList.remove('live'); $('#freshness').textContent = '連線中斷'; if (showErrors) toast(error.message); }
   finally { refreshing = false; }
 }
@@ -209,8 +219,8 @@ document.querySelectorAll('input[name="lamp"]').forEach(input => {
   };
 });
 // thinking and listening are page states; the rest come from MEMO's replies.
-const moodLabels = { neutral: '安靜陪伴', friendly: '溫柔陪伴', happy: '開心', concerned: '有點擔心', confused: '有點疑惑', surprised: '嚇一跳', proud: '專業模式', sleepy: '有點睏', alert: '警戒中', error: '出錯了', thinking: '思考中', listening: '在聽你說' };
-const moodFaces = { neutral: '◡', friendly: '◡', happy: '▽', concerned: '︵', confused: '?', surprised: '!', proud: '✦', sleepy: 'z', alert: '!', error: '×', thinking: '…', listening: '♪' };
+const moodLabels = { neutral: '安靜陪伴', friendly: '溫柔陪伴', happy: '開心', concerned: '有點擔心', confused: '有點疑惑', surprised: '嚇一跳', proud: '專業模式', sleepy: '有點睏', alert: '警戒中', error: '出錯了', thinking: '思考中', listening: '在聽你說', looking: '拍照中' };
+const moodFaces = { neutral: '◡', friendly: '◡', happy: '▽', concerned: '︵', confused: '?', surprised: '!', proud: '✦', sleepy: 'z', alert: '!', error: '×', thinking: '…', listening: '♪', looking: '◉' };
 // Images: one picture per message, shrunk here to a JPEG of at most 1024 px so phone photos
 // upload quickly. The backend shows it to the model and keeps only a note that it was sent.
 const IMAGE_SIDE = 1024, IMAGE_LIMIT = 2 * 1024 * 1024;
@@ -247,23 +257,47 @@ $('#chat-input').addEventListener('paste', event => {
   const file = [...(event.clipboardData?.files || [])].find(item => item.type.startsWith('image/'));
   if (file) { event.preventDefault(); attachFile(file); }
 });
-async function chat(text) {
+// "MEMO 我手上拿的是什麼": with the camera on, MEMO counts down on its screen and takes a
+// photo before asking. When the model asks to look (look_requested), the same message is
+// sent again with a photo.
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+async function lookCountdown() {
+  counting = true; $('#camera-preview').classList.add('big');
+  showEmotion({ label: 'looking', intensity: .5 });
+  try {
+    for (const n of [3, 2, 1]) { companion?.setCountdown(n); await wait(1000); }
+    companion?.setCountdown(null);
+    return (await camera.photo()).image;
+  } finally { counting = false; companion?.setCountdown(null); $('#camera-preview').classList.remove('big'); }
+}
+async function chat(text, { photo = false } = {}) {
   if (chatting) return;
   if (missingApi()) return;
-  const selected = activeDevice, currentGeneration = generation, image = attachment;
+  const selected = activeDevice, currentGeneration = generation;
+  let image = attachment, lookAgain = false;
   chatting = true; $('#send-message').disabled = true;
   $('#chat-input').value = ''; setAttachment(null);
-  if (image) text ||= '幫我看看這張圖';
-  const quote = image ? `${text}（附圖）` : text;
-  say('讓我想想…', { quote, waiting: true });
-  showEmotion({ label: 'thinking', intensity: .5 });
   try {
+    if (!image && camera.active && !photo && wantsReport(text)) {
+      // 「現在這邊怎樣」: MEMO looks around right away, no countdown.
+      flashPhoto(); image = (await camera.photo({ maxSide: 1024 })).image; photo = true;
+    } else if (!image && camera.active && (photo || wantsLook(text))) {
+      if (!photo) say('拿到鏡頭前給我看，我數到三。', { quote: text, waiting: true });
+      image = await lookCountdown(); photo = true;
+    }
+    if (image) text ||= '幫我看看這張圖';
+    const quote = image ? `${text}（${photo ? '拍照' : '附圖'}）` : text;
+    say('讓我想想…', { quote, waiting: true });
+    showEmotion({ label: 'thinking', intensity: .5 });
     const reply = await request(`/api/v1/devices/${encodeURIComponent(selected)}/interaction`, { method: 'POST', body: JSON.stringify({ session_id: sessionId, request_id: crypto.randomUUID(), user_message: text, personality: personality(), ...(image ? { image } : {}) }) });
     if (generation !== currentGeneration) { say('裝置已切換，已略過上一個裝置的回覆。'); return; }
-    say(reply.text, { quote, voice: true, sources: reply.sources || [] });
+    const hint = reply.look_requested && !camera.active ? '先按畫面右上角的鏡頭按鈕打開鏡頭，我才看得到喔。' : '';
+    say(hint ? `${reply.text}\n${hint}` : reply.text, { quote, voice: true, sources: reply.sources || [], spoken: image ? spokenText(reply.text) : reply.text, report: reply.mode === 'assignment' });
     showEmotion(reply.emotion);
-  } catch (error) { say(error.message, { quote }); showEmotion({ label: 'error', intensity: .5 }); }
-  finally { chatting = false; $('#send-message').disabled = false; }
+    lookAgain = reply.look_requested && camera.active;
+  } catch (error) { say(error.message, { quote: text }); showEmotion({ label: 'error', intensity: .5 }); }
+  finally { chatting = false; $('#send-message').disabled = false; lastReplyAt = performance.now(); }
+  if (lookAgain) chat(text, { photo: true });
 }
 // Mic: click to start. A pause after speaking (or a second click, or 15 s) stops it and sends the
 // transcript as a chat message; silence from the start cancels quietly.
@@ -349,10 +383,24 @@ async function changeDisturbance(body, note) {
 $('#apply-disturbance').onclick = () => changeDisturbance({ offsets: Object.fromEntries(offsetInputs.map(input => [input.dataset.offset, Number(input.value)])) }, '已套用干擾，數值會在幾筆資料內逐步變化。');
 $('#reset-disturbance').onclick = () => changeDisturbance({ reset: true }, '已恢復正常，數值會逐步回到平常範圍。');
 $('#node-red-toggle').onclick = () => changeDisturbance({ enabled: !nodeRed?.enabled }, nodeRed?.enabled ? '已暫停 Node-RED 傳送。' : '已恢復 Node-RED 傳送。');
+// MEMO's screen: page states and its own replies come first (a reply's expression holds for
+// a while); otherwise MEMO answers the person's expression. The label beside it stays MEMO's.
+const face = { base: { label: 'neutral', intensity: .4 }, holdUntil: 0, mirror: null, mirrorAt: -Infinity, shown: '' };
+function applyFace() {
+  const label = screenFace({ base: face.base.label, holdUntil: face.holdUntil, now: performance.now(), busy: talkingNow, mirror: face.mirror });
+  const intensity = label === face.base.label ? face.base.intensity : .5;
+  if (`${label}:${intensity}` === face.shown) return;
+  face.shown = `${label}:${intensity}`; companion?.setEmotion(label, intensity);
+}
+function setMirror(label, now) {
+  // At most one change every 1.5 s, so MEMO does not flicker with every twitch.
+  if (label === face.mirror || now - face.mirrorAt < 1500) return;
+  face.mirror = label; face.mirrorAt = now; applyFace();
+}
 function showEmotion(emotion) {
   $('#mood-label').textContent = moodLabels[emotion.label] || moodLabels.neutral;
   $('#mood-face').textContent = moodFaces[emotion.label] || moodFaces.neutral;
-  companion?.setEmotion(emotion.label, emotion.intensity);
+  face.base = emotion; face.holdUntil = performance.now() + REPLY_HOLD; applyFace();
 }
 async function syncCompanion(device, currentGeneration) {
   const scope = `${apiBase}/${device}/${sessionId}`;
@@ -371,6 +419,12 @@ async function syncCompanion(device, currentGeneration) {
       } catch { /* A digest is a courtesy; never block the page on it. */ }
     }
   }
+  await deliverNotifications(device, currentGeneration);
+  storage.set('memo.lastSeen', String(Date.now()));
+}
+// Ready notices are shown and spoken, then acknowledged. Look tasks call this right after a
+// photo leads to a notice, also while the tab is hidden, so MEMO speaks within seconds.
+async function deliverNotifications(device, currentGeneration = generation) {
   const tasks = await request(`/api/v1/devices/${encodeURIComponent(device)}/notifications`);
   if (generation !== currentGeneration || activeDevice !== device) return;
   for (const task of tasks) {
@@ -380,13 +434,207 @@ async function syncCompanion(device, currentGeneration) {
     try { await request(`/api/v1/devices/${encodeURIComponent(device)}/notifications/ack`, { method: 'POST', body: JSON.stringify({ task_id: task.id }) }); }
     catch (error) { if (error.status !== 409) throw error; }
   }
-  storage.set('memo.lastSeen', String(Date.now()));
 }
+// Camera: MEMO's eyes follow the person, its screen answers their expression, it waves back
+// while idle, and it takes photos when asked or when a look task is due. Off until turned on.
+let counting = false, lastReplyAt = 0, lastTyping = 0, tracking = null, looksSyncedAt = -Infinity, runner = null;
+let cameraWanted = storage.get('memo.camera') === 'on';
+const CAMERA_STATES = { on: '觀察中', off: '鏡頭關著', denied: '鏡頭權限被拒絕', unavailable: '找不到可用的鏡頭', insecure: '鏡頭需要 localhost 或 HTTPS' };
+const baseTitle = document.title;
+const camera = createCamera({ onChange: renderCamera });
+$('#camera-preview').appendChild(camera.video);
+const gaze = createGaze(), expressions = createExpressionReader(), waves = createWaveDetector();
+function updateTitle() { document.title = camera.active && document.hidden ? `📷 ${baseTitle}` : baseTitle; }
+function renderCamera(state) {
+  const on = state === 'on', label = on ? '關閉鏡頭（停止觀察）' : '打開鏡頭：MEMO 開始觀察這裡，眼睛也會跟著你';
+  $('#camera-toggle').setAttribute('aria-pressed', String(on)); $('#camera-toggle').setAttribute('aria-label', label); $('#camera-toggle').title = label;
+  $('#camera-chip').hidden = state === 'off';
+  $('#camera-chip').classList.toggle('on', on);
+  $('#camera-chip-label').textContent = CAMERA_STATES[state] || CAMERA_STATES.off;
+  $('#camera-preview').hidden = !on;
+  updateTitle();
+}
+renderCamera('off');
+// MEMO waves back only when it is doing nothing else and the person is not typing.
+function idle() {
+  const now = performance.now();
+  return !chatting && !talkingNow && !recording && !counting && !OWN_FACES.has(face.base.label)
+    && now - lastReplyAt > 3000 && now - lastTyping > 2000 && !companion?.waving;
+}
+function waveBack() { if (companion?.paused) setMirror('happy', performance.now()); else companion?.wave(); }
+async function cameraOn({ quiet = false } = {}) {
+  cameraWanted = true; storage.set('memo.camera', 'on');
+  if (!(await camera.start())) { if (!quiet) toast(CAMERA_STATES[camera.state]); return false; }
+  tracking ||= startTracking(camera.video, {
+    onFace(reading, now) {
+      runner?.face(Boolean(reading));
+      if (!reading) { gaze.target(null); expressions.lost(); setMirror(null, now); return; }
+      gaze.target(reading.centre);
+      setMirror(MIRROR[expressions.update(reading.blendshapes, now)] || null, now);
+    },
+    onHand(hand, chinY, now) { if (waves.update(hand, chinY, now) && idle()) waveBack(); },
+    wantHands: idle,
+  }).catch(error => {
+    tracking = null; console.warn('face tracking unavailable', error.message);
+    toast('臉部追蹤載入失敗；拍照仍然可以用。');
+  });
+  return true;
+}
+function cameraOff() {
+  cameraWanted = false; storage.set('memo.camera', 'off');
+  camera.stop(); gaze.target(null); expressions.lost(); face.mirror = null; applyFace();
+  syncObservation(activeDevice).catch(() => {});
+}
+$('#camera-toggle').onclick = () => (camera.active ? cameraOff() : cameraOn());
+$('#chat-input').addEventListener('keydown', () => { lastTyping = performance.now(); });
+// Observation goes on in the background: the camera stays on until it is turned off.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && cameraWanted && !camera.active) cameraOn({ quiet: true });
+  updateTitle();
+});
+let followed = performance.now();
+requestAnimationFrame(function follow(now) {
+  const offset = gaze.update(Math.min(.1, (now - followed) / 1000)); followed = now;
+  companion?.setGaze(companion.paused ? { x: 0, y: 0 } : offset);
+  applyFace();
+  requestAnimationFrame(follow);
+});
+function flashPhoto() {
+  if (!camera.active) return;
+  $('#camera-chip').classList.add('flash'); $('#camera-chip-label').textContent = '剛看了一眼';
+  setTimeout(() => { $('#camera-chip').classList.remove('flash'); renderCamera(camera.state); }, 2500);
+}
+function startLooks() {
+  runner = createLookRunner({
+    camera, request, device: () => activeDevice, onPhoto: flashPhoto,
+    onNotice: () => deliverNotifications(activeDevice).catch(() => {}),
+    onJobs: () => syncLooks(activeDevice).catch(() => {}),
+    onObserved: () => syncObservation(activeDevice).catch(() => {}),
+  });
+  runner.start();
+}
+
+// Observation panel: what MEMO sees now and today's log (what the camera saw, what look
+// tasks found, the room's events), with a mark on what MEMO said out loud.
+const SOURCE_WORDS = { observe: '鏡頭', look: '任務', environment: '環境' };
+let observationSyncedAt = -Infinity;
+async function syncObservation(device) {
+  observationSyncedAt = performance.now();
+  const base = `/api/v1/devices/${encodeURIComponent(device)}`;
+  const [state, log] = await Promise.all([request(`${base}/observation`), request(`${base}/observation/log?hours=24&limit=30`)]);
+  if (device !== activeDevice) return;
+  const now = state.now;
+  const parts = now ? [now.summary || (now.people != null && `${now.people} 人`), now.lighting && `光線${now.lighting}`].filter(Boolean) : [];
+  $('#observe-now').textContent = now ? `${now.seen_at}　${parts.join('・')}` : camera.active ? 'MEMO 正在看第一眼…' : '打開鏡頭後，MEMO 會開始觀察這裡。';
+  $('#observe-state').textContent = camera.active ? '觀察中' : '沒有在看';
+  $('#observe-log').replaceChildren(...log.map(entry => element('li', { className: entry.spoken ? 'spoken' : '' },
+    element('time', { textContent: clockOf(entry.at) }),
+    element('span', { className: 'tag', textContent: SOURCE_WORDS[entry.source] || entry.source }),
+    element('span', { textContent: entry.text }))));
+  $('#observe-empty').hidden = log.length > 0;
+}
+$('#observe-clear').onclick = async () => {
+  if (!confirm('要清除觀察日誌嗎？MEMO 記得的現場也會一起清掉。')) return;
+  try { await request(`/api/v1/devices/${encodeURIComponent(activeDevice)}/observation/log`, { method: 'DELETE' }); await syncObservation(activeDevice); }
+  catch (error) { toast(error.message); }
+};
+
+// Look tasks panel: each task with its latest record and history (answer, photo quality,
+// and the scene: 人、事、時、地、物、動作). Photos themselves are never kept.
+const RESULT_WORDS = { yes: '是', no: '否', unknown: '看不出來', skipped: '沒拍到' };
+const REASON_WORDS = { camera_off: '鏡頭沒開', permission_denied: '鏡頭權限被拒絕', camera_unavailable: '找不到鏡頭', no_capture: '網頁沒有回應', no_confirmation: '沒拍到確認照', quiet_hours: '勿擾時段', vision_unavailable: '模型不支援看圖', model_not_configured: '沒有設定模型', model_timeout: '模型逾時', model_unavailable: '模型連不上', invalid_model_output: '模型回覆無法解讀', vision_busy: '正在分析上一張', analysis_interrupted: '分析中斷' };
+const QUALITY_WORDS = { dark: '太暗', overexposed: '過亮', low_contrast: '對比太低', blurry: '模糊' };
+const element = (tag, props = {}, ...children) => { const node = Object.assign(document.createElement(tag), props); node.append(...children.filter(child => child != null && child !== false)); return node; };
+const clockOf = iso => new Date(iso).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false });
+function sceneLine(scene) {
+  if (!scene) return '';
+  const people = scene.people || {}, who = [people.count != null ? `${people.count} 人` : '', people.description].filter(Boolean).join('，');
+  return [scene.place && `地點：${scene.place}`, who && `人：${who}`, scene.activity && `事：${scene.activity}`, scene.objects?.length && `物：${scene.objects.join('、')}`, scene.actions?.length && `動作：${scene.actions.join('、')}`, scene.lighting && `光線：${scene.lighting}`].filter(Boolean).join('；');
+}
+function recordLine(record) {
+  const answer = record.mode === 'change' ? { yes: '有變化', no: '沒變化' }[record.result] || RESULT_WORDS[record.result] : RESULT_WORDS[record.result];
+  const flags = (record.quality?.flags || []).map(flag => QUALITY_WORDS[flag]);
+  return [`${clockOf(record.captured_at)} ${answer}`, flags.length && `照片${flags.join('、')}`, record.reason && (REASON_WORDS[record.reason] || record.reason), record.decision === 'baseline' && '設為基準', record.detail].filter(Boolean).join('・');
+}
+async function syncLooks(device) {
+  looksSyncedAt = performance.now();
+  const base = `/api/v1/devices/${encodeURIComponent(device)}`;
+  const jobs = (await request(`${base}/schedules`)).filter(job => job.purpose === 'look');
+  const records = jobs.length ? await request(`${base}/vision/observations?limit=80`) : [];
+  if (device === activeDevice) renderLooks(jobs, records);
+}
+function renderLooks(jobs, records) {
+  $('#looks-state').textContent = jobs.length ? `${jobs.filter(job => job.status === 'active').length} 個進行中` : '沒有任務';
+  $('#looks-empty').hidden = jobs.length > 0;
+  $('#looks-list').replaceChildren(...jobs.map(job => {
+    const mine = records.filter(record => record.job_id === job.id && record.decision !== 'confirm');
+    const button = (text, action) => element('button', { type: 'button', className: 'btn small', textContent: text, onclick: () => lookAction(job, action) });
+    return element('li', { className: 'look' },
+      element('div', { className: 'look-head' }, element('b', { textContent: job.description }), element('span', { className: 'tag', textContent: job.status === 'paused' ? '已暫停' : '進行中' })),
+      element('p', { className: 'look-last', textContent: mine[0] ? recordLine(mine[0]) : '還沒有紀錄' }),
+      mine.length > 0 && element('details', {}, element('summary', { textContent: `紀錄（${mine.length}）` }),
+        element('ol', {}, ...mine.slice(0, 12).map(record => element('li', {}, element('span', { textContent: recordLine(record) }), sceneLine(record.scene) && element('small', { textContent: sceneLine(record.scene) }))))),
+      element('div', { className: 'look-actions' }, button('框選範圍', 'roi'), button(job.status === 'paused' ? '恢復' : '暫停', 'toggle'), button('刪除', 'delete')));
+  }));
+}
+async function lookAction(job, action) {
+  const path = `/api/v1/devices/${encodeURIComponent(activeDevice)}/schedules/${job.id}`;
+  try {
+    if (action === 'roi') { openRoi(job); return; }
+    if (action === 'toggle') await request(path, { method: 'PATCH', body: JSON.stringify({ status: job.status === 'paused' ? 'active' : 'paused' }) });
+    if (action === 'delete') {
+      if (!confirm(`要刪除「${job.description}」嗎？\n這個任務的拍照紀錄也會一起刪除。`)) return;
+      await request(path, { method: 'DELETE' }); await references.remove(job.id);
+    }
+    await syncLooks(activeDevice);
+  } catch (error) { toast(error.message); }
+}
+// Region editor: drag on the live preview. The preview is mirrored like a selfie, while
+// regions are stored in the raw camera frame, so x is flipped on the way in and out.
+let roiJob = null, roiRect = null, roiStart = null;
+const roiBox = $('#roi-box');
+function drawRoi() {
+  roiBox.hidden = !roiRect;
+  if (roiRect) Object.assign(roiBox.style, { left: `${roiRect.x * 100}%`, top: `${roiRect.y * 100}%`, width: `${roiRect.w * 100}%`, height: `${roiRect.h * 100}%` });
+}
+function openRoi(job) {
+  if (!camera.active) { toast('先打開鏡頭，才能框選範圍。'); return; }
+  roiJob = job;
+  const roi = job.look?.roi;
+  roiRect = roi ? { x: 1 - roi.x - roi.w, y: roi.y, w: roi.w, h: roi.h } : null;
+  $('#roi-stage').prepend(camera.video); drawRoi(); $('#roi-dialog').showModal();
+}
+$('#roi-dialog').addEventListener('close', () => { $('#camera-preview').appendChild(camera.video); roiJob = null; });
+const roiPoint = event => { const box = $('#roi-stage').getBoundingClientRect(); return { x: Math.min(1, Math.max(0, (event.clientX - box.left) / box.width)), y: Math.min(1, Math.max(0, (event.clientY - box.top) / box.height)) }; };
+$('#roi-stage').addEventListener('pointerdown', event => { roiStart = roiPoint(event); $('#roi-stage').setPointerCapture(event.pointerId); });
+$('#roi-stage').addEventListener('pointermove', event => {
+  if (!roiStart) return;
+  const point = roiPoint(event);
+  roiRect = { x: Math.min(roiStart.x, point.x), y: Math.min(roiStart.y, point.y), w: Math.abs(point.x - roiStart.x), h: Math.abs(point.y - roiStart.y) };
+  drawRoi();
+});
+$('#roi-stage').addEventListener('pointerup', () => { roiStart = null; if (roiRect && (roiRect.w < .05 || roiRect.h < .05)) { roiRect = null; drawRoi(); } });
+async function saveRoi(roi) {
+  try {
+    const job = roiJob;
+    await request(`/api/v1/devices/${encodeURIComponent(activeDevice)}/schedules/${job.id}/look`, { method: 'PUT', body: JSON.stringify({ roi }) });
+    // A change task compares within its region, so a new region starts a new reference.
+    if (job.look?.mode === 'change') await references.remove(job.id);
+    $('#roi-dialog').close(); toast(roi ? '已更新拍照範圍。' : '改回拍整個畫面。');
+    syncLooks(activeDevice).catch(() => {});
+  } catch (error) { toast(error.message); }
+}
+const round = value => Math.round(value * 1000) / 1000;
+$('#roi-save').onclick = () => saveRoi(roiRect ? { x: round(Math.max(0, 1 - roiRect.x - roiRect.w)), y: round(roiRect.y), w: round(roiRect.w), h: round(roiRect.h) } : null);
+$('#roi-full').onclick = () => saveRoi(null);
+$('#roi-cancel').onclick = () => $('#roi-dialog').close();
+
 say('嗨，我是 MEMO。\n我就在這裡，陪你看看今天的空間。');
 if (apiBase) {
-  try { apiBase = normalizeUrl(apiBase); refresh(); }
+  try { apiBase = normalizeUrl(apiBase); refresh(); startLooks(); }
   catch (error) { apiBase = ''; connection(false, 'VITE_API_URL 無效'); toast(error.message); }
 } else connection(false, '未設定 VITE_API_URL');
 syncDisturbance();
+if (cameraWanted) cameraOn({ quiet: true });
 const interval = setInterval(() => { if (!document.hidden) { refresh(); syncDisturbance(); } }, 5000);
 window.addEventListener('pagehide', () => { clearInterval(interval); companion?.dispose(); });

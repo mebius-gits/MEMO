@@ -14,8 +14,10 @@
         <div id="scene" role="img" aria-label="薄荷綠掌機造型的 MEMO 坐著，輕輕呼吸與眨眼"></div>
         <div id="webgl-fallback" hidden><p>這個瀏覽器目前無法顯示 3D。</p><p>請啟用硬體加速，或使用新版 Chrome／Edge。<br>環境資料與對話仍可使用。</p></div>
         <div class="mood" aria-live="polite"><span id="mood-face" aria-hidden="true">◡</span><b id="mood-label">安靜陪伴</b></div>
-        <div class="stage-tools"><button id="new-chat" class="icon-button" aria-label="重新開始對話" title="重新開始對話"></button><button id="pause-motion" class="icon-button" aria-label="暫停動態" title="暫停動態"></button><button id="reset-camera" class="icon-button" aria-label="重設視角" title="重設視角"></button><button id="voice-toggle" class="icon-button" aria-pressed="true"></button></div>
-        <div id="bubble" class="bubble" role="log" aria-live="polite" aria-label="MEMO 說的話"><small id="bubble-quote" hidden></small><p id="bubble-text"></p><div id="bubble-sources" class="sources" hidden></div></div>
+        <div class="stage-tools"><button id="new-chat" class="icon-button" aria-label="重新開始對話" title="重新開始對話"></button><button id="pause-motion" class="icon-button" aria-label="暫停動態" title="暫停動態"></button><button id="reset-camera" class="icon-button" aria-label="重設視角" title="重設視角"></button><button id="voice-toggle" class="icon-button" aria-pressed="true"></button><button id="camera-toggle" class="icon-button" aria-pressed="false" aria-label="打開鏡頭" title="打開鏡頭"></button></div>
+        <div id="camera-chip" class="camera-chip" role="status" hidden><i aria-hidden="true"></i><span id="camera-chip-label">鏡頭關著</span></div>
+        <div id="camera-preview" class="camera-preview" hidden></div>
+        <div id="bubble" class="bubble" role="log" aria-live="polite" aria-label="MEMO 說的話"><small id="bubble-quote" hidden></small><span id="bubble-tag" class="bubble-tag" hidden>回報</span><p id="bubble-text"></p><div id="bubble-sources" class="sources" hidden></div></div>
         <footer class="stage-chat">
           <div id="attachment" class="attachment" hidden><img id="attachment-preview" alt="要給 MEMO 看的圖片" /><button id="attachment-remove" type="button" aria-label="移除圖片" title="移除圖片">×</button></div>
           <form id="chat-form"><label class="sr-only" for="chat-input">想對 MEMO 說什麼？</label><input id="chat-input" placeholder="想對 MEMO 說什麼？可以貼上圖片" maxlength="2000" autocomplete="off" /><input id="image-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/bmp" hidden /><button id="attach" type="button" class="mic" aria-label="上傳圖片給 MEMO 看" title="上傳圖片給 MEMO 看"></button><button id="mic" type="button" class="mic"></button><button id="send-message" type="submit" class="send" aria-label="傳送訊息"></button></form>
@@ -38,6 +40,13 @@
               <div class="metric" data-metric="illuminance_lux"><span class="metric-name"><i data-icon="sun"></i>光照</span><div class="metric-number"><b id="lux-value">—</b><span>lux</span></div><svg class="sparkline" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true"></svg></div>
             </div>
           </section>
+          <section class="group" aria-labelledby="observe-title">
+            <h3 id="observe-title">觀察<span id="observe-state" class="fresh">沒有在看</span></h3>
+            <p id="observe-now" class="observe-now">打開鏡頭後，MEMO 會開始觀察這裡。</p>
+            <p id="observe-empty" class="hint">今天還沒有紀錄。有人來去、動物出現、看守的東西被動、環境變化，都會記在這裡；照片不保存。</p>
+            <ol id="observe-log" class="observe-log"></ol>
+            <button id="observe-clear" class="btn small" type="button">清除觀察日誌</button>
+          </section>
           <section class="group">
             <h3>檯燈<span id="lamp-state" class="fresh">白天光</span></h3>
             <div class="seg lamps" role="radiogroup" aria-label="檯燈模式">
@@ -59,6 +68,11 @@
             <label class="sr-only" for="persona-text">人格描述</label>
             <textarea id="persona-text" rows="3" maxlength="300" placeholder="描述 MEMO 的角色與說話方式，例如：講話像老派管家，有禮但會碎念。"></textarea>
           </section>
+          <section class="group" aria-labelledby="looks-title">
+            <h3 id="looks-title">拍照任務<span id="looks-state" class="fresh">沒有任務</span></h3>
+            <p id="looks-empty" class="hint">用說的指派，例如「幫我顧著桌上的箱子」「每 30 分鐘告訴我這邊的情況」「每天 23:00 看一下電腦有沒有關」。照片不會保存，只留下紀錄。</p>
+            <ul id="looks-list" class="looks"></ul>
+          </section>
           <section class="group">
             <h3>環境干擾<button id="node-red-toggle" class="state-toggle" type="button" aria-pressed="false" disabled>未連線</button></h3>
             <div class="sliders">
@@ -72,6 +86,12 @@
       </aside>
     </main>
 
+    <dialog id="roi-dialog" class="roi-dialog" aria-labelledby="roi-title">
+      <h3 id="roi-title">框選要看的範圍</h3>
+      <div id="roi-stage" class="roi-stage"><div id="roi-box" class="roi-box" hidden></div></div>
+      <p class="hint">在畫面上拖曳，框出這個任務要看的地方；之後只會拍這個範圍。</p>
+      <div class="actions"><button id="roi-save" class="btn primary" type="button">儲存</button><button id="roi-full" class="btn" type="button">整個畫面</button><button id="roi-cancel" class="btn" type="button">取消</button></div>
+    </dialog>
     <div id="toast" role="status" hidden></div>
     <script type="module" src="/src/main.js"></script>
   </body>

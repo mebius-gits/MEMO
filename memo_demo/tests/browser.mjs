@@ -40,6 +40,12 @@ try {
   await page.getByText('白天', { exact: true }).click();
   await page.waitForFunction(() => document.querySelector('#lamp-state').textContent === '白天光');
   assert.equal(await lampMode(), 'day');
+  // Camera: the fake camera turns on with its chip and preview, then off again.
+  await page.locator('#camera-toggle').click();
+  await page.waitForFunction(() => document.querySelector('#camera-chip').classList.contains('on'));
+  assert.equal(await page.locator('#camera-preview').isVisible(), true);
+  await page.locator('#camera-toggle').click();
+  await page.waitForFunction(() => document.querySelector('#camera-chip').hidden);
   // Persona: preset is sent with the chat; editing its description switches to the custom persona.
   await page.getByText('損友', { exact: true }).click();
   assert.ok((await page.locator('#persona-text').inputValue()).startsWith('愛吐槽的損友'));
@@ -81,5 +87,5 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await page.screenshot({ path: 'test-results/mobile.png', fullPage: true });
   assert.deepEqual(errors, []);
-  console.log('PASS: 3D renderer, real backend connection, Node-RED disturbance and restore, desk lamp, persona settings, chat reply, voice in/out, new conversation, mobile layout');
+  console.log('PASS: 3D renderer, real backend connection, Node-RED disturbance and restore, desk lamp, camera, persona settings, chat reply, voice in/out, new conversation, mobile layout');
 } finally { await browser.close(); }
