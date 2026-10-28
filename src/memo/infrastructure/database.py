@@ -162,6 +162,8 @@ class VisionObservationRow(Base):
     decision: Mapped[str | None] = mapped_column(String(16))
     notice: Mapped[str | None] = mapped_column(String(16))
     level: Mapped[int | None] = mapped_column(Integer)
+    # The room when the photo was taken (memo.infrastructure.look_sensors.conditions).
+    sensors: Mapped[dict | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime())
 
 

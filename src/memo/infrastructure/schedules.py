@@ -26,7 +26,7 @@ from memo.infrastructure.environment_events import (
     sweep_stale,
 )
 from memo.infrastructure.observation import prune as prune_log
-from memo.infrastructure.vision import LOOK, expire_waiting, forget, prune, start_run
+from memo.infrastructure.vision import LOOK, expire_waiting, forget, prune, running, start_run
 
 logger = logging.getLogger(__name__)
 OPEN = ("active", "paused")
@@ -34,7 +34,14 @@ OPEN = ("active", "paused")
 
 def job_description(job: ScheduledJobRow, tz: str) -> str:
     text = describe(
-        job.kind, job.purpose, job.message, job.minutes, job.time_of_day, job.next_run_at, tz
+        job.kind,
+        job.purpose,
+        job.message,
+        job.minutes,
+        job.time_of_day,
+        job.next_run_at,
+        tz,
+        job.look,
     )
     return text + ("（已暫停）" if job.status == "paused" else "")
 
@@ -191,7 +198,9 @@ def fire_due(sessions, now: datetime, tz: str, vision_unavailable: str | None = 
             )
             if following is None and job.runs == 0 and (job.look or {}).get("mode") == "change":
                 # A one-off change task: the first run was its baseline, now the comparison.
-                following = job.next_run_at + timedelta(minutes=job.minutes)
+                # A sensor task's baseline is its only scheduled run; sensors start the rest.
+                if job.kind != "event":
+                    following = job.next_run_at + timedelta(minutes=job.minutes)
             run = job.runs + 1
             claimed = session.execute(
                 update(ScheduledJobRow)
@@ -202,7 +211,7 @@ def fire_due(sessions, now: datetime, tz: str, vision_unavailable: str | None = 
                 )
                 .values(
                     next_run_at=following,
-                    status="active" if following else "done",
+                    status="active" if following or job.kind == "event" else "done",
                     runs=run,
                     updated_at=now,
                 )
@@ -211,8 +220,11 @@ def fire_due(sessions, now: datetime, tz: str, vision_unavailable: str | None = 
             if claimed.rowcount != 1:
                 continue
             if job.purpose == LOOK:
-                start_run(session, job, run, now, tz, vision_unavailable)
-                fired += 1
+                # A run still waiting for its photo or the model covers this one: frequent
+                # safety checks must not pile up behind a slow model.
+                if not running(session, job.id):
+                    start_run(session, job, run, now, tz, vision_unavailable)
+                    fired += 1
                 continue
             session.add(
                 TaskMemoryRow(

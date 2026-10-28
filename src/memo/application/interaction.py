@@ -132,6 +132,11 @@ class InteractionService:
             "minutes_active 為已持續分鐘，reminders 為已提醒次數。語氣隨嚴重程度調整："
             "注意輕聲提醒、警戒明確提醒、危險直接而緊迫；重複提醒要換說法。"
             "schedule 是到期的排程任務；missed 是使用者離開期間沒收到的提醒。"
+            "拍照任務的 schedule.sensors 是拍照當下的感測數據（illuminance_lux 亮度、co2_ppm、"
+            "co2_change_10min 是 10 分鐘內 CO₂ 的變化、light_changed 表示光線剛明顯變過），"
+            "可以當旁證簡短帶一句，例如 CO₂ 一直在升代表房間裡可能有人；"
+            "triggered_by 是這次因為哪個感測狀況才去看；unverified 為 true 表示只有鏡頭畫面"
+            "偵測到變化、模型沒能確認照片內容，要照實說是畫面有動靜，不要描述沒看到的細節。"
             "profile 是使用者自己說過、你記得的事（稱呼、喜好、正在做的事），自然地運用，"
             "例如用他的名字叫他，但不要每次都提，也不要整串念出來；他現在說的和 profile 不同時，"
             "以現在說的為準。history 是這次對話最近幾句原文，開頭標著（主動提醒）的是你自己"
@@ -234,13 +239,22 @@ class InteractionService:
                 "daily 用 time（24 小時制）。"
                 "使用者要你定時拍照看某件事（例如「每 30 分鐘幫我看我有沒有駝背」"
                 "「每天 23:00 看一下電腦有沒有關」「每小時看桌上的包裹有沒有被動過」）時，"
-                '用 {"type":"schedule","kind":"once|interval|daily","purpose":"look",'
+                '用 {"type":"schedule","kind":"once|interval|daily|event","purpose":"look",'
                 '"message":"簡短的事由","minutes":30,"time":"23:00","look":{"mode":"check|change",'
-                '"question":"可以用是或否回答的問題","alert_on":"yes|no",'
-                '"notify":"on_alert|on_change|always"}}。'
+                '"question":"check 寫是非題，change 寫要看的東西","alert_on":"yes|no",'
+                '"notify":"on_alert|on_change|always","watch":false,"on":[]}}。'
                 "check 問是非題，alert_on 是需要提醒的那個答案："
                 "「我有沒有駝背」是 yes，「電腦有沒有關機」是 no（還沒關才提醒）；"
                 "change 看某個東西或區域有沒有變化，question 寫要看的東西。"
+                "看守東西（「幫我顧著箱子」「有沒有人動我的東西」「看包裹有沒有被動過」）"
+                "一定用 change，不要用 check（一張照片看不出有沒有被動過），question 寫東西本身"
+                "（例如「桌上的箱子」），watch 用 true，kind 用 interval，"
+                "使用者沒說多久就用 minutes 2，不用先問。"
+                "只在感測器有狀況時才看（例如「CO₂ 偏高時看一下窗戶有沒有開」），kind 用 event，"
+                "不用 minutes 或 time，look.on 列出觸發：co2_high（CO₂ 偏高）、"
+                "co2_rising（CO₂ 上升）、"
+                "temperature_high、temperature_low、temperature_rising、humidity_high、humidity_low、"
+                "light（燈或光線明顯變化）；定時的任務也可以附 on，表示這些狀況發生時也多看一次。"
                 "notify 預設 on_alert（出現要提醒的答案時才說）；"
                 "使用者想知道每次的結果用 always，只想知道變化用 on_change。"
                 "不確定使用者的意思就先問，不要猜。"

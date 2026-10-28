@@ -21,12 +21,14 @@ from memo.domain.environment import (
     expire,
 )
 from memo.domain.observation import nobody_here
+from memo.domain.vision import LIGHT, light_jump
 from memo.infrastructure.database import (
     DeviceRow,
     DeviceSettingRow,
     EventStateRow,
     EventUpdateRow,
     ObservationStateRow,
+    ReadingRow,
     RuleConfigRow,
     ScheduledJobRow,
     TaskMemoryRow,
@@ -38,6 +40,8 @@ SCHEDULE_RULE = "schedule"
 # Notices from MEMO's own observation (someone back, an animal): memo.infrastructure.observation.
 OBSERVE_RULE = "observe"
 METRICS = ("temperature_c", "humidity_pct", "co2_ppm", "illuminance_lux")
+# A jump in illuminance against a reading this recent counts as the light changing.
+LIGHT_GAP = timedelta(seconds=90)
 
 
 @lru_cache(maxsize=1)
@@ -199,6 +203,7 @@ def project_reading(session, reading, policy: AttentionPolicy | None = None):
     policy = policy or policy_for(session, device_id)
     metrics = reading_metrics(reading)
     valid = reading.quality == "ok"
+    triggers = []
     for rule, version in rule_set(session):
         rows = locked_states(session, device_id, rule.id)
         row = rows[0] if rows else None
@@ -206,6 +211,7 @@ def project_reading(session, reading, policy: AttentionPolicy | None = None):
         state, notice = advance(rule, before, stamp, metrics[rule.metric], valid)
         if notice == "active":
             state["rule_version"] = version
+            triggers.append(rule.id)
         unknown = state.get("status") == "unknown" and before.get("status") != "unknown"
         kind = notice or ("unknown" if unknown else None)
         record(session, row, device_id, rule.id, before, state, kind, notice, at, policy)
@@ -216,6 +222,33 @@ def project_reading(session, reading, policy: AttentionPolicy | None = None):
     state, notice = connectivity(before, stamp, usable)
     kind = sensor_kind(before, state)
     record(session, row, device_id, SENSOR_RULE, before, state, kind, notice, at, policy)
+    if valid and light_changed(session, reading, metrics["illuminance_lux"]):
+        triggers.append(LIGHT)
+    if triggers:
+        # An event starting or the light changing runs the look tasks that ask for it.
+        from memo.infrastructure.vision import start_triggered
+
+        start_triggered(session, device_id, triggers, at)
+
+
+def light_changed(session, reading, lux) -> bool:
+    """The illuminance jumped since the previous reading (the lamp or ceiling light switched,
+    curtains drawn)."""
+    if lux is None:
+        return False
+    before = session.scalar(
+        select(ReadingRow.illuminance_lux)
+        .where(
+            ReadingRow.device_id == reading.device_id,
+            ReadingRow.quality == "ok",
+            ReadingRow.illuminance_lux.is_not(None),
+            ReadingRow.observed_at < reading.observed_at,
+            ReadingRow.observed_at >= reading.observed_at - LIGHT_GAP,
+        )
+        .order_by(ReadingRow.observed_at.desc())
+        .limit(1)
+    )
+    return light_jump(before, lux)
 
 
 def swept(rules: dict, rule_id: str, state: dict, now: float) -> tuple[dict, str | None, str]:

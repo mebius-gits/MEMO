@@ -32,12 +32,18 @@ DIGEST_PROMPT = (
 
 
 class ScheduleCreate(Schema):
-    kind: Literal["once", "interval", "daily", "followup"]
+    kind: Literal["once", "interval", "daily", "followup", "event"] = Field(
+        description="event：只有拍照任務能用，沒有自己的時間，只在 look.on 的感測狀況發生時看"
+    )
     purpose: Literal["remind", "summary", "look"] = "remind"
     message: str = Field(default="", max_length=60, examples=["喝水"])
     look: LookConfig | None = Field(default=None, description="purpose 為 look 時必填")
     minutes: int | None = Field(
-        default=None, ge=1, le=1440, description="once／followup：幾分鐘後；interval：間隔"
+        default=None,
+        ge=1,
+        le=1440,
+        description="once／followup：幾分鐘後；interval：間隔"
+        "（至少 5 分鐘，持續盯著的拍照任務至少 1 分鐘）",
     )
     time: str | None = Field(
         default=None, pattern=r"^([01]?\d|2[0-3]):[0-5]\d$", description="daily：台北時間 HH:MM"
@@ -50,7 +56,7 @@ class ScheduleUpdate(Schema):
 
 class JobOutput(Schema):
     id: str
-    kind: Literal["once", "interval", "daily", "followup"]
+    kind: Literal["once", "interval", "daily", "followup", "event"]
     purpose: Literal["remind", "summary", "followup", "look"]
     message: str
     minutes: int | None

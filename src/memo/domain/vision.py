@@ -52,6 +52,32 @@ QUALITY_WORDS = {
     "blurry": "模糊",
 }
 VISIBILITY = ("clear", "partial", "poor")
+# Sensor changes that start a look task by themselves (look.on), besides its schedule: the
+# light changing markedly (the lamp switched, or the illuminance jumped), or an environment
+# event starting (memo.domain.environment rule ids). A watched task always looks again when
+# the light changes. A new sensor joins by adding its trigger here.
+LIGHT = "light"
+TRIGGER_LABELS = {
+    LIGHT: "燈光變化",
+    "co2_high": "CO₂ 偏高",
+    "co2_rising": "CO₂ 上升",
+    "temperature_high": "太熱",
+    "temperature_low": "太冷",
+    "temperature_rising": "變熱",
+    "humidity_high": "太潮濕",
+    "humidity_low": "太乾",
+}
+# Below this illuminance a photo shows too little to say whether something changed.
+DARK_LUX = 10
+# Reasons the model gave no answer; a watched change the page saw hold is still told then.
+MODEL_FAILURES = (
+    "model_not_configured",
+    "vision_unavailable",
+    "model_timeout",
+    "model_unavailable",
+    "invalid_model_output",
+    "vision_busy",
+)
 SCENE_LIST_MAX = {"animals": 5, "objects": 8, "actions": 5}
 SCENE_ITEM_MAX = {"animals": 30, "objects": 20, "actions": 30}
 SCENE_TEXT_MAX = {"activity": 60, "place": 30, "lighting": 20}
@@ -78,7 +104,8 @@ def validate_look(raw, fallback_question: str = "") -> dict | None:
     ``alert_on`` is the answer worth telling: "yes" for 「我有沒有駝背」, "no" for
     「電腦有沒有關機」. ``notify`` decides when MEMO speaks: on_alert (that answer appears,
     persists or goes away), on_change (the answer changes) or always (every run); a report
-    always speaks. ``watch`` (change tasks only) keeps the page watching between runs."""
+    always speaks. ``watch`` (change tasks only) keeps the page watching between runs. ``on``
+    lists sensor triggers (TRIGGER_LABELS) that also run the task; kept only when not empty."""
     raw = raw if isinstance(raw, dict) else {}
     mode = raw.get("mode", "check")
     if mode not in MODES:
@@ -95,7 +122,23 @@ def validate_look(raw, fallback_question: str = "") -> dict | None:
     look = {"mode": mode, "question": question, "alert_on": alert_on, "notify": notify}
     look["roi"] = validate_roi(raw.get("roi"))
     look["watch"] = mode == "change" and raw.get("watch") is True
+    on = raw.get("on") if isinstance(raw.get("on"), list) else []
+    if triggers := [item for item in dict.fromkeys(on) if item in TRIGGER_LABELS]:
+        look["on"] = triggers
     return look
+
+
+def light_jump(before: float | None, after: float | None) -> bool:
+    """A marked change in illuminance: the lamp or the ceiling light switched, curtains."""
+    if before is None or after is None:
+        return False
+    low, high = sorted((before, after))
+    return high - low >= 30 and high >= 1.5 * max(low, 1)
+
+
+def too_dark(flags, conditions: dict | None) -> bool:
+    """The photo came out dark and the light sensor does not say the room is lit."""
+    return "dark" in (flags or ()) and (conditions or {}).get("dark") is not False
 
 
 def quality_flags(metrics: dict | None) -> list[str]:

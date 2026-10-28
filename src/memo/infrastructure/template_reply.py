@@ -58,17 +58,23 @@ def look_words(schedule) -> str:
     """A look notice without the model: what the photo showed, in one sentence."""
     notice, detail = schedule.get("notice"), schedule.get("detail")
     if notice == "unseen":
+        if schedule.get("dark"):
+            return "房間太暗了，我連續幾次拍照都看不清楚，要不要開個燈？"
         quality = "、".join(schedule.get("quality") or [])
         why = f"，照片{quality}" if quality else ""
         return f"我連續幾次拍照都看不清楚{why}，可以幫我看一下鏡頭嗎？"
     if notice == "recovered":
         return f"剛剛看了一下，{detail}，好多了！" if detail else "剛剛看了一下，已經好多了！"
     if notice == "changed":
+        if schedule.get("unverified"):
+            return f"{detail or '盯著的地方有東西變了'}。我只看到畫面在變，還沒能看清楚是什麼。"
         return f"我拍照比對發現有變化：{detail or '和之前不一樣了'}。"
     if notice in ("alert", "repeat"):
         count = schedule.get("today_count") or 0
         times = f"（今天第 {count} 次）" if count > 1 else ""
-        return f"提醒一下：{detail or schedule['message']}{times}。"
+        because = "、".join(schedule.get("triggered_by") or [])
+        lead = f"因為{because}，我去看了一下：" if because else "提醒一下："
+        return f"{lead}{detail or schedule['message']}{times}。"
     if schedule.get("mode") == "report":
         return f"我看了一下：{detail or '這次看不太清楚'}。"
     answer = {"yes": "是", "no": "不是", "unknown": "看不出來"}.get(schedule.get("result"), "")

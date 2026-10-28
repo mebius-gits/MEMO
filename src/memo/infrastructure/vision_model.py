@@ -6,9 +6,12 @@ a one-line detail and the scene record (people, animals, activity, place, object
 lighting). Photos are sent to the model and dropped; nothing here stores or logs them.
 """
 
+import heapq
+import itertools
 import json
 import socket
 import threading
+import time
 from collections import defaultdict
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
@@ -62,6 +65,9 @@ REPORT_CONTRACT = '\nJSON contract: {"summary":"一句話","answer":"seen|unknow
 MOMENT = "最後一張是變化剛開始時的畫面，用來描述當時發生的動作（寫進 scene 的 actions）。"
 # MEMO's own look around, the same as a report about the whole space.
 SPACE = {"mode": "report", "question": "這個空間現在的樣子"}
+# Who goes first when photos wait for the model: a watched change the page saw hold, then a
+# confirming photo, then a scheduled look, then MEMO's own look around.
+WATCHED, CONFIRMING, SCHEDULED, OBSERVING = 0, 1, 2, 3
 
 
 class VisionFailure(Exception):
@@ -96,12 +102,46 @@ def traditional(value):
     return value
 
 
+class PriorityGate:
+    """One analysis at a time; among the callers waiting, the lowest priority number (then
+    the earliest) goes next."""
+
+    def __init__(self):
+        self.condition = threading.Condition()
+        self.busy = False
+        self.waiting = []
+        self.order = itertools.count()
+
+    def acquire(self, priority: int, timeout: float) -> bool:
+        with self.condition:
+            ticket = (priority, next(self.order))
+            heapq.heappush(self.waiting, ticket)
+            deadline = time.monotonic() + timeout
+            while self.busy or self.waiting[0] != ticket:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    self.waiting.remove(ticket)
+                    heapq.heapify(self.waiting)
+                    self.condition.notify_all()
+                    return False
+                self.condition.wait(remaining)
+            heapq.heappop(self.waiting)
+            self.busy = True
+            return True
+
+    def release(self):
+        with self.condition:
+            self.busy = False
+            self.condition.notify_all()
+
+
 class VisionAnalyzer:
     def __init__(self, settings, opener=urlopen):
         self.settings = settings
         self.opener = opener
-        # One photo at a time per device: a confirming photo waits for the first to finish.
-        self.locks = defaultdict(threading.Lock)
+        # One photo at a time per device: a confirming photo waits for the first to finish,
+        # and a watched change goes ahead of scheduled looks and MEMO's own.
+        self.locks = defaultdict(PriorityGate)
 
     @property
     def unavailable(self) -> str | None:
@@ -119,7 +159,14 @@ class VisionAnalyzer:
         )
 
     def instructions(
-        self, look, *, reference: bool, baseline_text: str | None, baseline: bool, moment=False
+        self,
+        look,
+        *,
+        reference: bool,
+        baseline_text: str | None,
+        baseline: bool,
+        moment=False,
+        hint="",
     ):
         question = look["question"]
         if look["mode"] == "report":
@@ -129,15 +176,15 @@ class VisionAnalyzer:
         elif baseline:
             task = BASELINE.format(question=question) + BASELINE_CONTRACT
         else:
-            hint = (
+            basis = (
                 REFERENCE_IMAGE
                 if reference
                 else REFERENCE_TEXT.format(baseline=baseline_text)
                 if baseline_text
                 else ""
             )
-            task = CHANGE.format(question=question, reference=hint) + CHANGE_CONTRACT
-        return COMMON + (MOMENT if moment else "") + task + " No other fields."
+            task = CHANGE.format(question=question, reference=basis) + CHANGE_CONTRACT
+        return COMMON + (MOMENT if moment else "") + hint + task + " No other fields."
 
     def analyze(
         self,
@@ -150,11 +197,14 @@ class VisionAnalyzer:
         baseline: bool = False,
         captured_label: str = "",
         moment: str | None = None,
+        hint: str = "",
+        priority: int = SCHEDULED,
     ) -> dict:
         """The parsed observation (memo.domain.vision.parse_observation) for one photo.
 
         ``moment`` is a photo from when a watched change began, sent last so the model can
-        describe the action. Raises VisionFailure with the reason when there is no answer."""
+        describe the action; ``hint`` is what the sensors say about the light. Raises
+        VisionFailure with the reason when there is no answer."""
         if reason := self.unavailable:
             raise VisionFailure(reason)
         use_reference = bool(reference) and look["mode"] == "change" and not baseline
@@ -165,6 +215,7 @@ class VisionAnalyzer:
             baseline_text=baseline_text,
             baseline=baseline,
             moment=use_moment,
+            hint=hint,
         )
         data = json.dumps(
             {"question": look["question"], "mode": look["mode"], "captured_at": captured_label},
@@ -173,7 +224,7 @@ class VisionAnalyzer:
         images = ([reference] if use_reference else []) + [image] + ([moment] if use_moment else [])
         request = completion_request(self.settings, instructions, data, images)
         lock = self.locks[device_id]
-        if not lock.acquire(timeout=self.timeout):
+        if not lock.acquire(priority, self.timeout):
             raise VisionFailure("vision_busy")
         try:
             content = completion_content(self.opener, request, self.timeout)

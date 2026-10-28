@@ -35,7 +35,8 @@ from memo.infrastructure.database import (
     VisionObservationRow,
 )
 from memo.infrastructure.environment_events import NOTICE_TTL, OBSERVE_RULE, policy_for
-from memo.infrastructure.vision_model import SPACE, VisionFailure
+from memo.infrastructure.look_sensors import conditions
+from memo.infrastructure.vision_model import OBSERVING, SPACE, VisionFailure
 
 OBSERVE = OBSERVE_RULE  # task_memory.rule_id of observation notices; job_id of MEMO's photos
 SKIPS = ("camera_off", "camera_unavailable", "permission_denied")
@@ -249,8 +250,9 @@ class ObservationService:
                     VisionObservationRow.job_id == OBSERVE,
                 )
             )
-        if last is not None and (now - last).total_seconds() < gap:
-            raise Conflict("Observed a moment ago")
+            if last is not None and (now - last).total_seconds() < gap:
+                raise Conflict("Observed a moment ago")
+            sensors = conditions(session, device_id, captured_at)
         metrics = clean_quality(quality)
         flags = quality_flags(metrics)
         observation = reason = None
@@ -265,12 +267,17 @@ class ObservationService:
                     captured_label=captured_at.astimezone(ZoneInfo(self.tz)).strftime(
                         "%Y-%m-%d %H:%M"
                     ),
+                    priority=OBSERVING,
                 )
             except VisionFailure as failure:
                 reason = failure.reason
-        return self.settle(device_id, trigger, captured_at, observation, reason, metrics, flags)
+        return self.settle(
+            device_id, trigger, captured_at, observation, reason, metrics, flags, sensors
+        )
 
-    def settle(self, device_id, trigger, at, observation, reason, metrics, flags) -> dict:
+    def settle(
+        self, device_id, trigger, at, observation, reason, metrics, flags, sensors=None
+    ) -> dict:
         now = datetime.now(timezone.utc)
         quality = {"metrics": metrics, "flags": flags}
         if observation and observation.get("visibility"):
@@ -293,6 +300,7 @@ class ObservationService:
                 quality=quality,
                 reason=reason,
                 decision=trigger,
+                sensors=sensors,
                 created_at=now,
             )
             session.add(record)

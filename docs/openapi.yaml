@@ -2702,6 +2702,7 @@ components:
           - interval
           - daily
           - followup
+          - event
           title: Kind
         purpose:
           type: string
@@ -2896,6 +2897,22 @@ components:
           title: Watch
           description: change 才有：持續盯著，網頁每 2 秒比對範圍，有變化並穩定後立刻拍照比對
           default: false
+        'on':
+          items:
+            type: string
+            enum:
+            - light
+            - co2_high
+            - co2_rising
+            - temperature_high
+            - temperature_low
+            - temperature_rising
+            - humidity_high
+            - humidity_low
+          type: array
+          title: 'On'
+          description: 這些感測狀況發生時也看一次：light 燈光明顯變化，或環境事件開始（co2_high…）；kind 為 event
+            的任務只靠這些觸發
       additionalProperties: false
       type: object
       required:
@@ -2981,6 +2998,22 @@ components:
           - type: boolean
           - type: 'null'
           title: Watch
+        'on':
+          anyOf:
+          - items:
+              type: string
+              enum:
+              - light
+              - co2_high
+              - co2_rising
+              - temperature_high
+              - temperature_low
+              - temperature_rising
+              - humidity_high
+              - humidity_low
+            type: array
+          - type: 'null'
+          title: 'On'
       additionalProperties: false
       type: object
       title: LookUpdate
@@ -3175,6 +3208,13 @@ components:
           - type: integer
           - type: 'null'
           title: Level
+        sensors:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Sensors
+          description: 拍照當下的感測數據：亮度、CO₂、溫濕度、光線是否剛變過
       additionalProperties: false
       type: object
       required:
@@ -3880,7 +3920,9 @@ components:
           - interval
           - daily
           - followup
+          - event
           title: Kind
+          description: event：只有拍照任務能用，沒有自己的時間，只在 look.on 的感測狀況發生時看
         purpose:
           type: string
           enum:
@@ -3908,7 +3950,7 @@ components:
             minimum: 1.0
           - type: 'null'
           title: Minutes
-          description: once／followup：幾分鐘後；interval：間隔
+          description: once／followup：幾分鐘後；interval：間隔（至少 5 分鐘，持續盯著的拍照任務至少 1 分鐘）
         time:
           anyOf:
           - type: string

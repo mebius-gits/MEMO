@@ -8,7 +8,12 @@ before MEMO speaks; the task is then queued and the ordinary dispatcher words th
 
 A watched change task (look.watch) can also be run on demand: the page watches the region
 between runs and triggers a run when the region changed and settled; having seen the change
-hold, it needs no confirming photo.
+hold, it needs no confirming photo. When the model cannot answer for such a run, the change
+the page saw is told anyway, marked as unverified, unless the light just changed.
+
+Sensors join in twice: a change of light or an environment event starting runs the tasks
+that ask for it (start_triggered), and every photo is analysed and recorded together with
+the room's conditions at that moment (memo.infrastructure.look_sensors).
 
 Photos are never stored. Every run leaves a record, including runs without a usable photo
 (camera off, nothing sent in time, model failure), so the history has no gaps. Quiet hours
@@ -28,12 +33,16 @@ from memo.domain.vision import (
     CAPTURE_WINDOW_SECONDS,
     CONFIRM_GAP_SECONDS,
     CONFIRM_WINDOW_SECONDS,
+    LIGHT,
+    MODEL_FAILURES,
     QUALITY_WORDS,
+    TRIGGER_LABELS,
     alerting,
     clean_quality,
     judge,
     quality_flags,
     scene_text,
+    too_dark,
 )
 from memo.infrastructure.database import (
     ScheduledJobRow,
@@ -42,8 +51,9 @@ from memo.infrastructure.database import (
     VisionObservationRow,
 )
 from memo.infrastructure.environment_events import NOTICE_TTL, SCHEDULE_RULE, policy_for
+from memo.infrastructure.look_sensors import conditions, evidence, model_hint
 from memo.infrastructure.observation import log_event
-from memo.infrastructure.vision_model import VisionFailure
+from memo.infrastructure.vision_model import CONFIRMING, SCHEDULED, WATCHED, VisionFailure
 
 LOOK = "look"  # task_memory.event_status of a look run
 WAITING = ("awaiting_capture", "confirming")
@@ -55,6 +65,8 @@ DAILY_DAYS = 180
 CLOCK_SLACK = timedelta(seconds=180)
 # A watched task is run on demand at most this often.
 TRIGGER_GAP = timedelta(seconds=20)
+# A task is started by sensors at most this often.
+SENSOR_GAP = timedelta(minutes=2)
 
 
 def local_day(at: datetime, tz: str) -> str:
@@ -139,16 +151,27 @@ def start_run(session, job, run, now, tz, unavailable=None):
     return task
 
 
+def latest_run(session, job_id) -> TaskMemoryRow | None:
+    return session.scalar(
+        select(TaskMemoryRow)
+        .where(TaskMemoryRow.event_id == job_id, TaskMemoryRow.event_status == LOOK)
+        .order_by(TaskMemoryRow.created_at.desc())
+        .limit(1)
+    )
+
+
+def running(session, job_id) -> bool:
+    """A run of this task still waits for its photo or for the model; a new one would only
+    queue behind it."""
+    latest = latest_run(session, job_id)
+    return latest is not None and latest.status in (*WAITING, "analyzing")
+
+
 def trigger_run(session, job, now) -> TaskMemoryRow:
     """Run a watched task now: the page saw its region change and settle."""
     if not (job.look or {}).get("watch") or job.status != "active":
         raise Conflict("Only an active watched task can be run on demand")
-    latest = session.scalar(
-        select(TaskMemoryRow)
-        .where(TaskMemoryRow.event_id == job.id, TaskMemoryRow.event_status == LOOK)
-        .order_by(TaskMemoryRow.created_at.desc())
-        .limit(1)
-    )
+    latest = latest_run(session, job.id)
     if latest is not None and (
         latest.status in (*WAITING, "analyzing") or now - latest.created_at < TRIGGER_GAP
     ):
@@ -156,6 +179,42 @@ def trigger_run(session, job, now) -> TaskMemoryRow:
     job.runs += 1
     job.updated_at = now
     return start_run(session, job, job.runs, now, None)
+
+
+def start_triggered(session, device_id, triggers, now) -> int:
+    """Run the look tasks a sensor change asks for: those with the trigger in look.on, and
+    watched tasks when the light changed. Each at most every SENSOR_GAP, never twice at once.
+    The caller commits."""
+    triggers = set(triggers or ())
+    if not triggers:
+        return 0
+    jobs = session.scalars(
+        select(ScheduledJobRow).where(
+            ScheduledJobRow.device_id == device_id,
+            ScheduledJobRow.purpose == LOOK,
+            ScheduledJobRow.status == "active",
+        )
+    ).all()
+    started = 0
+    for job in jobs:
+        look, state = job.look or {}, job.look_state or {}
+        wanted = set(look.get("on") or ()) | ({LIGHT} if look.get("watch") else set())
+        hit = sorted(triggers & wanted)
+        last = state.get("sensor_run_at")
+        if not hit or (last and now - datetime.fromisoformat(last) < SENSOR_GAP):
+            continue
+        if running(session, job.id):
+            continue
+        job.runs += 1
+        job.updated_at = now
+        job.look_state = state | {
+            "sensor_run_at": now.isoformat(),
+            "sensor_run": job.runs,
+            "triggered_by": hit,
+        }
+        start_run(session, job, job.runs, now, None)
+        started += 1
+    return started
 
 
 def waiting_tasks(session, device_id=None):
@@ -330,7 +389,14 @@ def job_facts(session, job, tz, now) -> dict:
         "question": look.get("question", job.message),
         "mode": look.get("mode"),
         "schedule": describe(
-            job.kind, job.purpose, job.message, job.minutes, job.time_of_day, job.next_run_at, tz
+            job.kind,
+            job.purpose,
+            job.message,
+            job.minutes,
+            job.time_of_day,
+            job.next_run_at,
+            tz,
+            look,
         ),
         "status": job.status,
         "last": brief(seen, tz) if seen else None,
@@ -420,6 +486,14 @@ def notice_context(session, job, task, tz, now) -> dict:
         "recent_notices": said,
         "captured_at": local_clock(decisive.captured_at, tz) if decisive else None,
     }
+    if decisive is not None and (sensors := evidence(decisive.sensors)):
+        context["sensors"] = sensors
+        if (decisive.sensors or {}).get("dark"):
+            context["dark"] = True
+    if decisive is not None and decisive.result == "yes" and decisive.reason in MODEL_FAILURES:
+        context["unverified"] = True
+    if state.get("sensor_run") == task.event_version and state.get("triggered_by"):
+        context["triggered_by"] = [TRIGGER_LABELS[item] for item in state["triggered_by"]]
     if changed := state.get("changed_at"):
         context["since_minutes"] = max(
             0, round((now - datetime.fromisoformat(changed)).total_seconds() / 60)
@@ -518,12 +592,16 @@ class CaptureService:
         look, state = job_view["look"], job_view["state"]
         metrics = clean_quality(quality)
         flags = quality_flags(metrics)
+        with self.sessions() as session:
+            sensors = conditions(session, device_id, captured_at)
         baseline = (
             not skip
             and look["mode"] == "change"
             and not reference
             and not state.get("baseline_text")
         )
+        # Watching already saw the change hold, so the first photo is trusted.
+        watched = trigger == "watch" and bool(look.get("watch"))
         reason = observation = None
         if skip or not image:
             reason = skip if skip in SKIPS else "camera_unavailable"
@@ -540,9 +618,14 @@ class CaptureService:
                         "%Y-%m-%d %H:%M"
                     ),
                     moment=moment,
+                    hint=model_hint(sensors) if look["mode"] != "report" else "",
+                    priority=WATCHED if watched else CONFIRMING if attempt == 2 else SCHEDULED,
                 )
             except VisionFailure as failure:
                 reason = failure.reason
+            observation, baseline = self.with_sensors(
+                look, observation, reason, flags, sensors, baseline, watched, captured_at
+            )
         return self.settle(
             device_id,
             task_id,
@@ -557,9 +640,39 @@ class CaptureService:
             baseline=baseline and observation is not None,
             had_reference=bool(reference),
             skipped=bool(skip or not image),
-            # Watching already saw the change hold, so the first photo is trusted.
-            confirmed=trigger == "watch" and bool(look.get("watch")),
+            confirmed=watched,
+            sensors=sensors,
         )
+
+    def with_sensors(self, look, observation, reason, flags, sensors, baseline, watched, at):
+        """The answer once the room's conditions are taken into account, and whether the
+        photo still only sets the baseline.
+
+        A dark photo in a dark room cannot say whether a watched thing changed, either way.
+        A watched change the page saw hold is told even when the model gave no answer, as
+        unverified, unless the light just changed (then the page probably saw the light)."""
+        if look["mode"] != "change":
+            return observation, baseline
+        if observation and not baseline and observation["result"] != "unknown":
+            if too_dark(flags, sensors):
+                return observation | {
+                    "result": "unknown",
+                    "detail": "太暗了，看不清楚有沒有變",
+                }, False
+        if (
+            observation is None
+            and watched
+            and reason in MODEL_FAILURES
+            and not sensors.get("light_changed")
+        ):
+            seen = {
+                "result": "yes",
+                "detail": f"盯著的地方在 {local_clock(at, self.tz)} 有東西變了，而且一直維持",
+                "visibility": None,
+                "scene": None,
+            }
+            return seen, False
+        return observation, baseline
 
     def settle(
         self,
@@ -578,6 +691,7 @@ class CaptureService:
         had_reference,
         skipped,
         confirmed=False,
+        sensors=None,
     ) -> dict:
         tz = self.tz
         with self.sessions() as session:
@@ -607,6 +721,7 @@ class CaptureService:
                     reason=reason,
                     decision=decision,
                     quality=quality,
+                    sensors=sensors,
                 )
                 count_daily(session, job, at, tz, first if attempt == 2 and first else "skipped")
                 task.status = "skipped"
@@ -658,6 +773,7 @@ class CaptureService:
                 decision=decision,
                 notice=verdict.notice,
                 level=verdict.level,
+                sensors=sensors,
             )
             job.look_state = verdict.state
             job.updated_at = at

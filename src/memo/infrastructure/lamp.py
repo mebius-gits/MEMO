@@ -1,8 +1,12 @@
-"""Desk lamp state, switched from the web page. MEMO reads it but cannot change it."""
+"""Desk lamp state, switched from the web page. MEMO reads it but cannot change it.
+
+Switching it changes the light, which runs the look tasks that look again then (watched
+tasks, and those with "light" in look.on)."""
 
 from datetime import datetime, timezone
 
 from memo.domain.lamp import DEFAULT_MODE, LABELS, resolve
+from memo.domain.vision import LIGHT
 from memo.infrastructure.database import LampStateRow
 
 
@@ -29,11 +33,16 @@ class LampRepository:
         row = self.session.get(LampStateRow, device_id)
         current = row.mode if row else DEFAULT_MODE
         mode = resolve(request, current, row.last_on if row else None)
+        now = datetime.now(timezone.utc)
+        if mode != current:
+            from memo.infrastructure.vision import start_triggered
+
+            start_triggered(self.session, device_id, {LIGHT}, now)
         if row is None:
             row = LampStateRow(device_id=device_id)
             self.session.add(row)
         row.mode, row.changed_by = mode, "api"
-        row.updated_at = datetime.now(timezone.utc)
+        row.updated_at = now
         if mode != "off":
             row.last_on = mode
         self.session.commit()

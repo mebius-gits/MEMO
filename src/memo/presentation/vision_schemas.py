@@ -8,6 +8,17 @@ from memo.presentation.schemas import Schema
 
 Answer = Literal["yes", "no", "unknown"]
 Notify = Literal["on_alert", "on_change", "always"]
+# memo.domain.vision.TRIGGER_LABELS
+Trigger = Literal[
+    "light",
+    "co2_high",
+    "co2_rising",
+    "temperature_high",
+    "temperature_low",
+    "temperature_rising",
+    "humidity_high",
+    "humidity_low",
+]
 
 
 class Roi(Schema):
@@ -46,6 +57,11 @@ class LookConfig(Schema):
         default=False,
         description="change 才有：持續盯著，網頁每 2 秒比對範圍，有變化並穩定後立刻拍照比對",
     )
+    on: list[Trigger] = Field(
+        default_factory=list,
+        description="這些感測狀況發生時也看一次：light 燈光明顯變化，或環境事件開始（co2_high…）；"
+        "kind 為 event 的任務只靠這些觸發",
+    )
 
 
 class LookUpdate(Schema):
@@ -55,6 +71,7 @@ class LookUpdate(Schema):
     notify: Notify | None = None
     roi: Roi | None = None
     watch: bool | None = None
+    on: list[Trigger] | None = None
 
 
 class LookStateOutput(Schema):
@@ -210,6 +227,9 @@ class ObservationOutput(Schema):
     decision: str | None = None
     notice: str | None = None
     level: int | None = None
+    sensors: dict | None = Field(
+        default=None, description="拍照當下的感測數據：亮度、CO₂、溫濕度、光線是否剛變過"
+    )
 
 
 class ObserveInput(Schema):
