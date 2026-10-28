@@ -13,6 +13,7 @@ from memo.domain.schedule import describe, following_run, parse_intent, validate
 from memo.infrastructure import vision as vision_module
 from memo.infrastructure.schedules import fire_due
 from memo.infrastructure.settings import Settings
+from memo.infrastructure.template_reply import look_words
 from memo.infrastructure.vision import start_triggered
 from memo.main import create_app
 from tests.test_watch_iot import JPEG, Eyes
@@ -94,6 +95,15 @@ def test_seconds_in_timing_and_words():
     assert describe("once", "remind", "喝水", None, None, now, TZ, seconds=10).startswith(
         "10 秒後（16:00）提醒：喝水"
     )
+
+
+def test_a_change_notice_says_what_the_sensors_add():
+    schedule = {
+        "notice": "changed",
+        "detail": "桌前多了一個人",
+        "sensors": {"light_changed": True, "co2_change_10min": 180},
+    }
+    assert look_words(schedule) == "我拍照比對發現有變化：桌前多了一個人，燈光剛變過，CO₂ 也在升。"
 
 
 # ---- End to end ----------------------------------------------------------------------------

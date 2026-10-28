@@ -23,7 +23,11 @@ logger = logging.getLogger(__name__)
 
 # What MEMO is asked to do for each kind of notice; the context JSON carries the facts.
 NOTICE_PROMPTS = {
-    "active": "請用你的人格主動提醒使用者剛觀察到的狀況（見 attention），一到兩句。",
+    "active": (
+        "請用你的人格主動提醒使用者剛觀察到的狀況（見 attention），一到兩句。"
+        "situation.now 有剛看到的畫面時，把畫面和數值合起來說一句（例如 CO₂ 在升，"
+        "桌前坐了兩個人）；兩邊對不上就照實說（CO₂ 在升，但畫面裡沒看到人），不要猜原因。"
+    ),
     "escalated": (
         "狀況變得更嚴重，已到「{level_label}」程度。請比上次更明確地提醒，"
         "可以提一個最關鍵的數字，並從 approved_suggestions 挑一個建議。"
@@ -67,7 +71,9 @@ LOOK_PROMPTS = {
     "recovered": "上次提醒的「{question}」已經改善了（見 schedule），用一句話肯定他。",
     "changed": (
         "你拍照比對發現「{question}」有變化（見 schedule 的 detail 與 scene），"
-        "用一兩句告訴使用者哪裡變了，不要猜原因。"
+        "用一兩句告訴使用者哪裡變了，不要猜原因。schedule 有 sensors 或 triggered_by 時，"
+        "把畫面和感測合成一句（例如「燈剛被打開，桌前有人坐下，CO₂ 也在升」）；"
+        "畫面和感測對不上時照實說兩邊，不要硬湊原因。"
     ),
     "report": (
         "這是使用者要你定時拍照回報的「{question}」，用一兩句說你看到的結果"

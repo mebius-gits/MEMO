@@ -66,9 +66,12 @@ def look_words(schedule) -> str:
     if notice == "recovered":
         return f"剛剛看了一下，{detail}，好多了！" if detail else "剛剛看了一下，已經好多了！"
     if notice == "changed":
+        also = sensor_words(schedule)
         if schedule.get("unverified"):
-            return f"{detail or '盯著的地方有東西變了'}。我只看到畫面在變，還沒能看清楚是什麼。"
-        return f"我拍照比對發現有變化：{detail or '和之前不一樣了'}。"
+            return (
+                f"{detail or '盯著的地方有東西變了'}{also}。我只看到畫面在變，還沒能看清楚是什麼。"
+            )
+        return f"我拍照比對發現有變化：{detail or '和之前不一樣了'}{also}。"
     if notice in ("alert", "repeat"):
         count = schedule.get("today_count") or 0
         times = f"（今天第 {count} 次）" if count > 1 else ""
@@ -79,6 +82,17 @@ def look_words(schedule) -> str:
         return f"我看了一下：{detail or '這次看不太清楚'}。"
     answer = {"yes": "是", "no": "不是", "unknown": "看不出來"}.get(schedule.get("result"), "")
     return f"我看了一下「{schedule['question']}」：{detail or answer}。"
+
+
+def sensor_words(schedule) -> str:
+    """What the sensors add to a change, as a clause: 「，燈光剛變過，CO₂ 也在升」."""
+    sensors = schedule.get("sensors") or {}
+    parts = []
+    if sensors.get("light_changed"):
+        parts.append("燈光剛變過")
+    if (sensors.get("co2_change_10min") or 0) >= 100:
+        parts.append("CO₂ 也在升")
+    return "".join(f"，{part}" for part in parts)
 
 
 def observed_words(schedule) -> str:
