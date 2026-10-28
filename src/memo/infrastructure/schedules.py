@@ -11,7 +11,7 @@ from uuid import uuid4
 
 from sqlalchemy import select, update
 
-from memo.domain.schedule import describe, first_run, following_run
+from memo.domain.schedule import describe, first_run, following_run, same_thing
 from memo.infrastructure.database import (
     EventStateRow,
     ReadingRow,
@@ -100,6 +100,21 @@ class ScheduleRepository:
         self.session.add(job)
         return job
 
+    def watching(self, device_id, action) -> ScheduledJobRow | None:
+        """An open watch on the same thing as the watch this action would set up."""
+        look = action.get("look") or {}
+        if not look.get("watch"):
+            return None
+        for job in self.open_jobs(device_id):
+            other = job.look or {}
+            if (
+                other.get("watch")
+                and other.get("mode") == look.get("mode")
+                and same_thing(other["question"], look["question"])
+            ):
+                return job
+        return None
+
     def matching(self, device_id, match, statuses=OPEN) -> list[ScheduledJobRow]:
         return [
             job
@@ -136,6 +151,9 @@ class ScheduleRepository:
         """Carry out a validated action; returns a Chinese description, or None if no-op."""
         kind = action["type"]
         if kind == "schedule":
+            if twin := self.watching(device_id, action):
+                # 「幫我顧著箱子」 twice, or in other words, keeps one watch.
+                return "已經在盯了：" + job_description(twin, self.tz)
             job = self.create(device_id, action, now, session_id)
             self.session.commit()
             return "已設定：" + job_description(job, self.tz)

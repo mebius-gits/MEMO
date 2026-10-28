@@ -68,6 +68,8 @@ def validate_action(raw) -> dict | None:
             look = validate_look(raw.get("look"), message)
             if look is None:
                 return None
+            if look["mode"] == "change" and look["watch"]:
+                look["question"] = watched_thing(look["question"])
             message = message or look["question"][:MESSAGE_MAX]
         if purpose in ("remind", "followup") and not message:
             return None
@@ -197,6 +199,22 @@ _TAIL = re.compile(r"(?:一下|吧|喔|哦|啦|好嗎|好不好|嗎|了)+$")
 
 def _thing(text: str) -> str:
     return _TAIL.sub("", _CUT.split(text, maxsplit=1)[0]).strip()
+
+
+def watched_thing(question: str) -> str:
+    """What a watch is about, without the asking around it: 「看桌上的箱子有沒有被動過」 is
+    about 「桌上的箱子」."""
+    return _thing(_LEAD.sub("", question)) or question
+
+
+def same_thing(first: str, second: str) -> bool:
+    """Whether two watches are about the same thing: 「這箱子」 and 「桌上的箱子」 are,
+    「桌上的箱子」 and 「門口的箱子」 are not."""
+    first, second = (
+        re.sub(r"這個|那個|這|那|我的|的", "", watched_thing(question))
+        for question in (first, second)
+    )
+    return bool(first and second) and (first in second or second in first)
 
 
 def parse_watch(text: str) -> dict | None:

@@ -266,6 +266,7 @@ class InteractionService:
                 "一定用 change，不要用 check（一張照片看不出有沒有被動過），question 寫東西本身"
                 "（例如「桌上的箱子」），watch 用 true，kind 用 interval，"
                 "使用者沒說多久就用 minutes 2，不用先問。"
+                "jobs 裡已經有在盯同一個東西的任務時，不要再設定一次，告訴他已經在盯了。"
                 "只在感測器有狀況時才看（例如「CO₂ 偏高時看一下窗戶有沒有開」），kind 用 event，"
                 "不用 minutes 或 time，look.on 列出觸發：co2_high（CO₂ 偏高）、"
                 "co2_rising（CO₂ 上升）、"
