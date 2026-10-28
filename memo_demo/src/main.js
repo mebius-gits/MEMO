@@ -446,6 +446,12 @@ const camera = createCamera({ onChange: renderCamera });
 $('#camera-preview').appendChild(camera.video);
 const gaze = createGaze(), expressions = createExpressionReader(), waves = createWaveDetector();
 function updateTitle() { document.title = camera.active && document.hidden ? `📷 ${baseTitle}` : baseTitle; }
+// The camera section folds to a hint while the camera is off and there is nothing to show.
+const eye = { logged: 0, jobs: 0 };
+function renderEye() {
+  $('#eye-body').hidden = !camera.active && !eye.logged && !eye.jobs;
+  $('#eye-idle').hidden = !$('#eye-body').hidden;
+}
 function renderCamera(state) {
   const on = state === 'on', label = on ? '關閉鏡頭（停止觀察）' : '打開鏡頭：MEMO 開始觀察這裡，眼睛也會跟著你';
   $('#camera-toggle').setAttribute('aria-pressed', String(on)); $('#camera-toggle').setAttribute('aria-label', label); $('#camera-toggle').title = label;
@@ -454,6 +460,7 @@ function renderCamera(state) {
   $('#camera-chip-label').textContent = CAMERA_STATES[state] || CAMERA_STATES.off;
   $('#camera-preview').hidden = !on;
   updateTitle();
+  renderEye();
 }
 renderCamera('off');
 // MEMO waves back only when it is doing nothing else and the person is not typing.
@@ -515,9 +522,17 @@ function startLooks() {
   runner.start();
 }
 
-// Observation panel: what MEMO sees now and today's log (what the camera saw, what look
-// tasks found, the room's events), with a mark on what MEMO said out loud.
+// Camera section, two views: 現在 (what MEMO sees now and today's log: what the camera saw,
+// what look tasks found, the room's events, marked when MEMO said it out loud) and 任務 (the
+// look tasks). With the camera off and nothing to show it folds to one line of hint.
 const SOURCE_WORDS = { observe: '鏡頭', look: '任務', environment: '環境' };
+function showView(view) {
+  $(`input[name="eye-view"][value="${view}"]`).checked = true;
+  $('#view-now').hidden = view !== 'now'; $('#view-tasks').hidden = view !== 'tasks';
+  storage.set('memo.eyeView', view);
+}
+document.querySelectorAll('input[name="eye-view"]').forEach(input => { input.onchange = () => showView(input.value); });
+showView(storage.get('memo.eyeView') === 'tasks' ? 'tasks' : 'now');
 let observationSyncedAt = -Infinity;
 async function syncObservation(device) {
   observationSyncedAt = performance.now();
@@ -526,13 +541,14 @@ async function syncObservation(device) {
   if (device !== activeDevice) return;
   const now = state.now;
   const parts = now ? [now.summary || (now.people != null && `${now.people} 人`), now.lighting && `光線${now.lighting}`].filter(Boolean) : [];
-  $('#observe-now').textContent = now ? `${now.seen_at}　${parts.join('・')}` : camera.active ? 'MEMO 正在看第一眼…' : '打開鏡頭後，MEMO 會開始觀察這裡。';
-  $('#observe-state').textContent = camera.active ? '觀察中' : '沒有在看';
+  $('#observe-now').textContent = now ? `${now.seen_at}　${parts.join('・')}` : 'MEMO 正在看第一眼…';
+  $('#observe-now').hidden = !now && !camera.active;
   $('#observe-log').replaceChildren(...log.map(entry => element('li', { className: entry.spoken ? 'spoken' : '' },
     element('time', { textContent: clockOf(entry.at) }),
     element('span', { className: 'tag', textContent: SOURCE_WORDS[entry.source] || entry.source }),
     element('span', { textContent: entry.text }))));
   $('#observe-empty').hidden = log.length > 0;
+  eye.logged = log.length; renderEye();
 }
 $('#observe-clear').onclick = async () => {
   if (!confirm('要清除觀察日誌嗎？MEMO 記得的現場也會一起清掉。')) return;
@@ -573,13 +589,17 @@ async function offerRoi(device) {
   const jobs = await syncLooks(device).catch(() => []);
   const job = jobs.filter(item => item.look?.watch && !item.look.roi).sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
   if (!job || device !== activeDevice) return;
-  if (!camera.active) { toast('打開鏡頭後，可以在「拍照任務」按「框選範圍」框出要盯著的東西。'); return; }
+  showView('tasks');
+  if (!camera.active) { toast('打開鏡頭後，可以在「鏡頭」的「任務」按「框選範圍」框出要盯著的東西。'); return; }
   toast('框出要盯著的東西，小小的變化也看得出來；不框就看整個畫面。');
   openRoi(job);
 }
 function renderLooks(jobs, records) {
-  $('#looks-state').textContent = jobs.length ? `${jobs.filter(job => job.status === 'active').length} 個進行中` : '沒有任務';
+  const active = jobs.filter(job => job.status === 'active').length;
+  $('#looks-state').textContent = `${active} 個任務進行中`; $('#looks-state').hidden = !active;
+  $('#looks-tab').textContent = jobs.length ? `任務（${jobs.length}）` : '任務';
   $('#looks-empty').hidden = jobs.length > 0;
+  eye.jobs = jobs.length; renderEye();
   $('#looks-list').replaceChildren(...jobs.map(job => {
     const mine = records.filter(record => record.job_id === job.id && record.decision !== 'confirm');
     const button = (text, action) => element('button', { type: 'button', className: 'btn small', textContent: text, onclick: () => lookAction(job, action) });

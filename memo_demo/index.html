@@ -40,12 +40,25 @@
               <div class="metric" data-metric="illuminance_lux"><span class="metric-name"><i data-icon="sun"></i>光照</span><div class="metric-number"><b id="lux-value">—</b><span>lux</span></div><svg class="sparkline" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true"></svg></div>
             </div>
           </section>
-          <section class="group" aria-labelledby="observe-title">
-            <h3 id="observe-title">觀察<span id="observe-state" class="fresh">沒有在看</span></h3>
-            <p id="observe-now" class="observe-now">打開鏡頭後，MEMO 會開始觀察這裡。</p>
-            <p id="observe-empty" class="hint">今天還沒有紀錄。有人來去、動物出現、看守的東西被動、環境變化，都會記在這裡；照片不保存。</p>
-            <ol id="observe-log" class="observe-log"></ol>
-            <button id="observe-clear" class="btn small" type="button">清除觀察日誌</button>
+          <section class="group" aria-labelledby="eye-title">
+            <h3 id="eye-title">鏡頭<span id="looks-state" class="fresh" hidden></span></h3>
+            <p id="eye-idle" class="hint">打開右上角的鏡頭，MEMO 會觀察這裡；也可以用說的指派，例如「幫我顧著桌上的箱子」「每 30 分鐘告訴我這邊的情況」。照片不保存，只留下紀錄。</p>
+            <div id="eye-body" hidden>
+              <div class="seg views" role="radiogroup" aria-label="鏡頭內容">
+                <label><input type="radio" name="eye-view" value="now" checked /><span>現在</span></label>
+                <label><input type="radio" name="eye-view" value="tasks" /><span id="looks-tab">任務</span></label>
+              </div>
+              <div id="view-now" class="view">
+                <p id="observe-now" class="observe-now" hidden></p>
+                <p id="observe-empty" class="hint">今天還沒有紀錄。有人來去、動物出現、看守的東西被動、環境變化，都會記在這裡。</p>
+                <ol id="observe-log" class="observe-log"></ol>
+                <button id="observe-clear" class="btn small" type="button">清除觀察日誌</button>
+              </div>
+              <div id="view-tasks" class="view" hidden>
+                <p id="looks-empty" class="hint">還沒有任務。用說的指派，例如「幫我顧著桌上的箱子」「每天 23:00 看一下電腦有沒有關」。</p>
+                <ul id="looks-list" class="looks"></ul>
+              </div>
+            </div>
           </section>
           <section class="group">
             <h3>檯燈<span id="lamp-state" class="fresh">白天光</span></h3>
@@ -67,11 +80,6 @@
             </div>
             <label class="sr-only" for="persona-text">人格描述</label>
             <textarea id="persona-text" rows="3" maxlength="300" placeholder="描述 MEMO 的角色與說話方式，例如：講話像老派管家，有禮但會碎念。"></textarea>
-          </section>
-          <section class="group" aria-labelledby="looks-title">
-            <h3 id="looks-title">拍照任務<span id="looks-state" class="fresh">沒有任務</span></h3>
-            <p id="looks-empty" class="hint">用說的指派，例如「幫我顧著桌上的箱子」「每 30 分鐘告訴我這邊的情況」「每天 23:00 看一下電腦有沒有關」。照片不會保存，只留下紀錄。</p>
-            <ul id="looks-list" class="looks"></ul>
           </section>
           <section class="group">
             <h3>環境干擾<button id="node-red-toggle" class="state-toggle" type="button" aria-pressed="false" disabled>未連線</button></h3>
