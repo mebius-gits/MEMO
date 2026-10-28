@@ -13,6 +13,9 @@ the same way: the deterministic Chinese phrase parser below, and a model's optio
      "alert_on": "yes", "notify": "on_alert"}}   # see memo.domain.vision
     {"type": "schedule", "kind": "interval", "purpose": "look", "message": "箱子",
      "minutes": 2, "look": {"mode": "change", "question": "箱子", "watch": true}}
+    {"type": "schedule", "kind": "interval", "purpose": "look", "message": "鑰匙",
+     "seconds": 30, "look": {"mode": "check", "question": "鑰匙還在嗎？", "alert_on": "no",
+     "watch": true}}   # "seconds" instead of "minutes" for a span that is not whole minutes
     {"type": "schedule", "kind": "event", "purpose": "look", "message": "窗戶有沒有開",
      "look": {"mode": "check", "question": "窗戶有沒有開？", "on": ["co2_high"]}}
     {"type": "look"}   # look at what the user shows the camera now
@@ -34,6 +37,19 @@ MINUTE_LIMITS = {"once": (1, 1440), "interval": (5, 1440), "followup": (1, 120)}
 # for what the page cannot tell, so they may come as often as every minute.
 WATCH_LIMITS = (1, 1440)
 WATCH_MINUTES = 2
+# Seconds are for what cannot wait a minute: 「10 秒後提醒我」, a photo every 30 seconds. Only
+# look tasks repeat in seconds; a spoken reminder every few seconds would be noise.
+SECOND_LIMITS = {"once": (5, 86400), "interval": (10, 86400), "followup": (10, 7200)}
+# A look task asked for more often than this (seconds) is watched: the page compares the
+# frame every 2 s and the photos are its safety checks, so frequent photos never mean
+# frequent notices.
+WATCH_BELOW = 300
+# Watching the whole space also looks when the air says someone may have come in.
+SPACE_TRIGGERS = ("co2_high", "co2_rising")
+SPACE = re.compile(
+    r"(?:這裡|這邊|這|那裡|房間|整個房間|這個房間|四周|周圍|家裡|屋裡|屋子|客廳|空間|這個空間)"
+    r"(?:的)?(?:東西|狀態|狀況|情況|動靜|樣子)?"
+)
 SNOOZE_LIMITS = (5, 240)
 MESSAGE_MAX = 60
 FOLLOWUP_DEFAULT = 5
@@ -68,17 +84,9 @@ def validate_action(raw) -> dict | None:
             look = validate_look(raw.get("look"), message)
             if look is None:
                 return None
-            if look["mode"] == "change" and look["watch"]:
-                look["question"] = watched_thing(look["question"])
-            message = message or look["question"][:MESSAGE_MAX]
         if purpose in ("remind", "followup") and not message:
             return None
-        action = {"type": "schedule", "kind": kind, "purpose": purpose, "message": message}
-        if look:
-            action["look"] = look
-        if kind == "event":
-            # Only a look task can wait for sensors, and it needs at least one to wait for.
-            return action if look and look.get("on") else None
+        action = {"type": "schedule", "kind": kind, "purpose": purpose}
         if kind == "daily":
             match = re.fullmatch(
                 r"([01]?\d|2[0-3])[:：]([0-5]\d)", str(raw.get("time", "")).strip()
@@ -86,14 +94,32 @@ def validate_action(raw) -> dict | None:
             if not match:
                 return None
             action["time"] = f"{int(match[1]):02d}:{match[2]}"
-        else:
-            default = FOLLOWUP_DEFAULT if kind == "followup" else None
-            minutes = _int(raw.get("minutes", default))
-            watched = kind == "interval" and look is not None and look["watch"]
-            low, high = WATCH_LIMITS if watched else MINUTE_LIMITS[kind]
-            if minutes is None or not low <= minutes <= high:
+        elif kind != "event":
+            span = _span_of(raw, kind)
+            if span is None:
                 return None
-            action["minutes"] = minutes
+            unit, value = span
+            seconds = value if unit == "seconds" else value * 60
+            if look is not None and kind == "interval" and seconds < WATCH_BELOW:
+                look = frequent(look)
+            watched = kind == "interval" and look is not None and look["watch"]
+            if unit == "seconds":
+                if kind == "interval" and look is None:
+                    return None
+                low, high = SECOND_LIMITS[kind]
+            else:
+                low, high = WATCH_LIMITS if watched else MINUTE_LIMITS[kind]
+            if not low <= value <= high:
+                return None
+            action[unit] = value
+        if look:
+            look = watch_details(look) if look["watch"] else look
+            action["look"] = look
+            message = message or look["question"][:MESSAGE_MAX]
+        action["message"] = message
+        if kind == "event":
+            # Only a look task can wait for sensors, and it needs at least one to wait for.
+            return action if look and look.get("on") else None
         return action
     if kind_of == "snooze":
         minutes = _int(raw.get("minutes", SNOOZE_DEFAULT))
@@ -110,12 +136,43 @@ def validate_action(raw) -> dict | None:
     return None
 
 
+def _span_of(raw: dict, kind: str) -> tuple[str, int] | None:
+    """("minutes", n), or ("seconds", n) for a span given in seconds that is not whole
+    minutes; None when it is not a whole number."""
+    if raw.get("minutes") is None and raw.get("seconds") is not None:
+        seconds = _int(raw["seconds"])
+        if seconds is None:
+            return None
+        return ("minutes", seconds // 60) if seconds % 60 == 0 else ("seconds", seconds)
+    minutes = _int(raw.get("minutes", FOLLOWUP_DEFAULT if kind == "followup" else None))
+    return None if minutes is None else ("minutes", minutes)
+
+
+def frequent(look: dict) -> dict:
+    """A look task run more often than every 5 minutes is watched. Telling the whole scene
+    every few seconds would be noise, so a frequent report tells what changes instead."""
+    if look["mode"] == "report":
+        return look | {"mode": "change", "alert_on": "yes", "notify": "on_alert", "watch": True}
+    return look | {"watch": True}
+
+
+def watch_details(look: dict) -> dict:
+    """A watched change is about the thing itself (「桌上的箱子」, not the whole question),
+    and watching the whole space also looks when CO₂ says someone may be here."""
+    if look["mode"] != "change":
+        return look
+    look = look | {"question": watched_thing(look["question"])}
+    if SPACE.fullmatch(look["question"]):
+        look["on"] = list(dict.fromkeys([*look.get("on", ()), *SPACE_TRIGGERS]))
+    return look
+
+
 # ---- Chinese phrase parser -------------------------------------------------------------
 
 _DIGITS = {"零": 0, "〇": 0, "一": 1, "二": 2, "兩": 2, "两": 2, "三": 3, "四": 4, "五": 5}
 _DIGITS |= {"六": 6, "七": 7, "八": 8, "九": 9}
 NUM = r"[0-9零〇一二兩两三四五六七八九十百]+"
-UNIT = r"(?P<unit>分鐘|分|個?小時|個?鐘頭)"
+UNIT = r"(?P<unit>秒鐘|秒|分鐘|分|個?小時|個?鐘頭)"
 _WIDE = str.maketrans("０１２３４５６７８９：", "0123456789:")
 
 
@@ -138,11 +195,28 @@ def chinese_number(text: str | None) -> int | None:
 
 
 def _minutes(number: str | None, unit: str) -> int | None:
+    if unit.startswith("秒"):
+        return None
     per = 60 if unit.endswith(("小時", "鐘頭")) else 1
     if number == "半":
         return per // 2 if per == 60 else None
     value = 1 if number is None else chinese_number(number)
     return None if value is None else value * per
+
+
+def _span(number: str | None, unit: str) -> dict:
+    """{"minutes": n}, or {"seconds": n} for a span that is not whole minutes (「30 秒」
+    「半分鐘」); empty when the number cannot be read."""
+    if unit.startswith("秒"):
+        seconds = 1 if number is None else chinese_number(number)
+    elif number == "半" and not unit.endswith(("小時", "鐘頭")):
+        seconds = 30
+    else:
+        minutes = _minutes(number, unit)
+        return {} if minutes is None else {"minutes": minutes}
+    if not seconds:
+        return {}
+    return {"minutes": seconds // 60} if seconds % 60 == 0 else {"seconds": seconds}
 
 
 def _message(text: str) -> str:
@@ -186,12 +260,19 @@ _TOUCHED = re.compile(
     r"有沒有(?:被)?人?(?:動|碰|拿|翻|移)(?:過|走)?|有人(?:動|碰|拿|翻)過?(?=.*(?:就|的話|時))"
 )
 _YES_NO = re.compile(r"有沒有|是不是|在不在|還在")
+_PRESENT = re.compile(r"還在不在|在不在|還在嗎|還在|有沒有在")
+# 「每 30 秒幫我觀看這裡的狀態」「幫我注意家裡」: the whole space. Plain 「看一下房間」 is a
+# look right now (memo.domain.observation.REPORT_NOW), so 看 needs a 每….
+_SPACE_LOOK = re.compile(
+    r"(?P<verb>觀看|觀察|注意|留意|看)(?:一下|看)?"
+    r"(?P<what>這裡|這邊|房間|四周|周圍|家裡|屋裡|客廳)(?:的)?(?:狀態|狀況|情況|動靜)?"
+)
 _UNWATCH = re.compile(
     r"(?:不用|不要|別|停止|取消)再?(?:幫我)?(?:顧|盯|守|看著)(?:著|住)?(?P<what>.+)$"
 )
 _EVERY = re.compile(rf"每(?:隔)?(?P<n>{NUM}|半)?{UNIT}")
 _LEAD = re.compile(
-    r"^(?:可以|能不能|麻煩|請)?你?(?:幫我|替我)?(?:看|檢查|注意|確認|留意)?(?:一下|看)?"
+    r"^(?:改成|改為|換成)?(?:可以|能不能|麻煩|請)?你?(?:幫我|替我)?(?:看|檢查|注意|確認|留意)?(?:一下|看)?"
 )
 _CUT = re.compile(r"[，,。！？!?；;]|有沒有|有人|如果|要是|的話|不要|別讓|以免|被")
 _TAIL = re.compile(r"(?:一下|吧|喔|哦|啦|好嗎|好不好|嗎|了)+$")
@@ -218,28 +299,43 @@ def same_thing(first: str, second: str) -> bool:
 
 
 def parse_watch(text: str) -> dict | None:
-    """A watch request in a message without spaces, as a validated action; None otherwise."""
+    """A watch request in a message without spaces, as a validated action; None otherwise.
+
+    「幫我顧著箱子」 watches for any change; 「每 30 秒看鑰匙還在不在」「盯著鑰匙還在不在」
+    asks each photo whether it is still there and tells when it is not; 「每 30 秒看這裡的狀態」
+    「幫我注意家裡」 watches the whole space. 「鑰匙還在嗎」 alone is a question for now."""
     every = _EVERY.search(text)
     text = _EVERY.sub("", text)
-    if verb := _WATCH_VERB.search(text):
-        rest = text[verb.end() :]
+    span = _span(every["n"], every["unit"]) if every else {"minutes": WATCH_MINUTES}
+    verb = _WATCH_VERB.search(text)
+    rest = text[verb.end() :] if verb else _LEAD.sub("", text)
+    if (verb or every) and (present := _PRESENT.search(rest)) and not _TOUCHED.search(rest):
+        if what := _thing(rest[: present.start()]):
+            look = {"mode": "check", "question": f"{what}還在嗎？", "alert_on": "no"}
+            return _watch(what, span, look)
+    if verb:
         if _YES_NO.search(rest) and not _TOUCHED.search(rest):
             return None  # 「盯著我有沒有駝背」 is a yes/no question: the model sets it up
         what = _thing(rest)
     elif touched := _TOUCHED.search(text):
         what = _thing(_LEAD.sub("", text[: touched.start()])) or _thing(text[touched.end() :])
+    elif (space := _SPACE_LOOK.search(text)) and (every or space["verb"] != "看"):
+        what = space["what"]
     else:
         return None
     what = what or "這裡的東西"
-    minutes = _minutes(every["n"], every["unit"]) if every else WATCH_MINUTES
+    return _watch(what, span, {"mode": "change", "question": what})
+
+
+def _watch(what: str, span: dict, look: dict) -> dict | None:
     return validate_action(
         {
             "type": "schedule",
             "kind": "interval",
             "purpose": "look",
             "message": what,
-            "minutes": minutes,
-            "look": {"mode": "change", "question": what, "watch": True},
+            **span,
+            "look": look | {"watch": True},
         }
     )
 
@@ -297,7 +393,7 @@ def parse_intent(text: str) -> dict | None:
                 "type": "schedule",
                 "kind": "interval",
                 "message": _message(match["msg"]),
-                "minutes": _minutes(match["n"], match["unit"]),
+                **_span(match["n"], match["unit"]),
             }
         )
     if match := _ONCE.search(text) or _ONCE_LATER.search(text):
@@ -306,7 +402,7 @@ def parse_intent(text: str) -> dict | None:
                 "type": "schedule",
                 "kind": "once",
                 "message": _message(match["msg"]),
-                "minutes": _minutes(match["n"], match["unit"]),
+                **_span(match["n"], match["unit"]),
             }
         )
     if match := _SNOOZE_FOR.search(text):
@@ -318,7 +414,7 @@ def parse_intent(text: str) -> dict | None:
                 "type": "schedule",
                 "kind": "followup",
                 "message": "我" + match["act"],
-                "minutes": _minutes(later["n"], later["unit"]) if later else FOLLOWUP_DEFAULT,
+                **(_span(later["n"], later["unit"]) if later else {"minutes": FOLLOWUP_DEFAULT}),
             }
         )
     # Explicit look-ups come before the loose "知道了" snooze phrasing.
@@ -341,49 +437,68 @@ def next_daily(hhmm: str, after: datetime, tz: str) -> datetime:
     return due.astimezone(timezone.utc)
 
 
+def step(minutes: int | None, seconds: int | None = None) -> timedelta:
+    """A job's delay or interval: seconds when it has them, else minutes."""
+    return timedelta(seconds=seconds) if seconds else timedelta(minutes=minutes or 0)
+
+
+def span_words(minutes: int | None, seconds: int | None = None) -> str:
+    if seconds:
+        return f"{seconds} 秒"
+    return f"{minutes // 60} 小時" if minutes and minutes % 60 == 0 else f"{minutes} 分鐘"
+
+
 def first_run(action: dict, now: datetime, tz: str) -> datetime | None:
     if action["kind"] == "event":
         return None  # sensors start it
     if action["kind"] == "daily":
         return next_daily(action["time"], now, tz)
-    return now + timedelta(minutes=action["minutes"])
+    return now + step(action.get("minutes"), action.get("seconds"))
 
 
 def following_run(
-    kind: str, minutes: int | None, hhmm: str | None, due: datetime, now: datetime, tz: str
+    kind: str,
+    minutes: int | None,
+    hhmm: str | None,
+    due: datetime,
+    now: datetime,
+    tz: str,
+    seconds: int | None = None,
 ) -> datetime | None:
     """Next due time after a run; None for one-shot jobs. Missed runs are skipped, not replayed."""
     if kind == "interval":
-        step = timedelta(minutes=minutes)
-        due += step
+        every = step(minutes, seconds)
+        due += every
         while due <= now:
-            due += step
+            due += every
         return due
     if kind == "daily":
         return next_daily(hhmm, now, tz)
     return None
 
 
-def describe(kind, purpose, message, minutes, hhmm, next_run, tz, look=None) -> str:
+def describe(kind, purpose, message, minutes, hhmm, next_run, tz, look=None, seconds=None) -> str:
     at = next_run.astimezone(ZoneInfo(tz)).strftime("%H:%M") if next_run else None
+    span = span_words(minutes, seconds)
     if purpose == "look":
-        triggers = "、".join(TRIGGER_LABELS[item] for item in (look or {}).get("on", ()))
+        look = look or {}
+        triggers = "、".join(TRIGGER_LABELS[item] for item in look.get("on", ()))
         if kind == "event":
             return f"{triggers}時拍照看看：{message}"
         also = f"；{triggers}時也會看" if triggers else ""
         if kind == "once":
-            return f"{minutes} 分鐘後（{at}）拍照看看：{message}{also}"
+            return f"{span}後（{at}）拍照看看：{message}{also}"
         if kind == "daily":
             return f"每天 {hhmm} 拍照看看：{message}{also}"
-        every = f"{minutes // 60} 小時" if minutes % 60 == 0 else f"{minutes} 分鐘"
-        if (look or {}).get("watch"):
-            return f"持續盯著：{message}（每 {every}再拍照確認一次{also}）"
-        return f"每 {every}拍照看看：{message}" + (f"（下次 {at}）" if at else "") + also
+        if look.get("watch") and look.get("mode") == "check":
+            return f"持續盯著：{look['question']}（每 {span}拍照確認一次{also}）"
+        if look.get("watch"):
+            return f"持續盯著：{message}（每 {span}再拍照確認一次{also}）"
+        return f"每 {span}拍照看看：{message}" + (f"（下次 {at}）" if at else "") + also
     if kind == "once":
-        return f"{minutes} 分鐘後（{at}）提醒：{message}"
+        return f"{span}後（{at}）提醒：{message}"
     if kind == "interval":
-        every = f"{minutes // 60} 小時" if minutes % 60 == 0 else f"{minutes} 分鐘"
-        return f"每 {every}提醒：{message}" + (f"（下次 {at}）" if at else "")
+        return f"每 {span}提醒：{message}" + (f"（下次 {at}）" if at else "")
     if kind == "daily":
         return f"每天 {hhmm} 報環境摘要" if purpose == "summary" else f"每天 {hhmm} 提醒：{message}"
-    return f"{minutes} 分鐘後（{at}）回報「{message}」之後的變化"
+    return f"{span}後（{at}）回報「{message}」之後的變化"

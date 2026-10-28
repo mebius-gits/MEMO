@@ -252,7 +252,8 @@ class InteractionService:
                 '"purpose":"remind|summary","message":"要提醒的事","minutes":10,"time":"09:00"}、'
                 '{"type":"snooze","minutes":30}、{"type":"cancel|pause|resume","match":"關鍵字"}。'
                 "once 與 followup 用 minutes 表示幾分鐘後，interval 用 minutes 表示間隔，"
-                "daily 用 time（24 小時制）。"
+                "daily 用 time（24 小時制）；使用者說秒（「10 秒後」「每 30 秒」）就改用 seconds，"
+                '例如 "seconds":30。重複的提醒最短 5 分鐘，以秒重複的只有拍照任務。'
                 "使用者要你定時拍照看某件事（例如「每 30 分鐘幫我看我有沒有駝背」"
                 "「每天 23:00 看一下電腦有沒有關」「每小時看桌上的包裹有沒有被動過」）時，"
                 '用 {"type":"schedule","kind":"once|interval|daily|event","purpose":"look",'
@@ -267,6 +268,12 @@ class InteractionService:
                 "（例如「桌上的箱子」），watch 用 true，kind 用 interval，"
                 "使用者沒說多久就用 minutes 2，不用先問。"
                 "jobs 裡已經有在盯同一個東西的任務時，不要再設定一次，告訴他已經在盯了。"
+                "問東西在不在（「每 30 秒看鑰匙還在不在」「盯著錢包還在不在」）用 check，"
+                "question 寫「鑰匙還在嗎？」，alert_on 用 no，watch 用 true。"
+                "拍照任務多密都照使用者說的設"
+                "（「每 20 秒看門有沒有關」就附 seconds 20 的 action），"
+                "不要自己改間隔，也不要拒絕；不到 5 分鐘的會自動變成持續盯著，"
+                "text 簡短說會盯著、有狀況才說。"
                 "只在感測器有狀況時才看（例如「CO₂ 偏高時看一下窗戶有沒有開」），kind 用 event，"
                 "不用 minutes 或 time，look.on 列出觸發：co2_high（CO₂ 偏高）、"
                 "co2_rising（CO₂ 上升）、"

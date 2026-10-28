@@ -85,8 +85,10 @@ export function createLookRunner({ camera, request, device, onNotice = () => {},
     }
     if (result.store_reference) await references.put(task.job_id, kept.image);
     // What was just photographed is the region's settled scene from now on, here and in the
-    // saved copy. An answer that could not tell (too dark, no model) leaves both as they were.
-    if (task.mode === 'change' && (result.store_reference || ['yes', 'no'].includes(result.result))) {
+    // saved copy (a watched 「鑰匙還在嗎？」 too). An answer that could not tell (too dark, no
+    // model) leaves both as they were.
+    const settles = task.mode === 'change' || regions.has(task.job_id);
+    if (settles && (result.store_reference || ['yes', 'no'].includes(result.result))) {
       const grey = await camera.sample({ roi: task.roi, width: REGION_WIDTH }).catch(() => null);
       if (grey) { regions.get(task.job_id)?.rebase(grey); references.putGrey(task.job_id, grey, task.roi); }
     }

@@ -397,6 +397,7 @@ def job_facts(session, job, tz, now) -> dict:
             job.next_run_at,
             tz,
             look,
+            job.seconds,
         ),
         "status": job.status,
         "last": brief(seen, tz) if seen else None,
@@ -751,8 +752,9 @@ class CaptureService:
             if decision == "notify":
                 policy = policy_for(session, device_id)
                 now = datetime.now(timezone.utc)
-                # A watched object that changed is said even in quiet hours; the rest waits.
-                urgent = look["mode"] == "change"
+                # A watched object that changed or went missing is said even in quiet
+                # hours; the rest waits.
+                urgent = look["mode"] == "change" or bool(look.get("watch"))
                 if not urgent and (
                     policy.quiet(now)
                     or look_notices_last_hour(session, device_id, now) >= policy.max_per_hour
@@ -783,7 +785,7 @@ class CaptureService:
                     session,
                     device_id,
                     at,
-                    "watched_change" if look["mode"] == "change" else "task",
+                    "watched_change" if look["mode"] == "change" or look.get("watch") else "task",
                     f"{look['question']}：{(observation or {}).get('detail') or result}",
                     spoken=decision == "notify",
                     data={"job_id": job.id, "observation_id": row.id, "notice": verdict.notice},

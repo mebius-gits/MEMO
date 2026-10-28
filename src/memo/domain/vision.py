@@ -7,9 +7,9 @@ takes a photo, a vision model answers the task's question and describes the scen
 Three kinds of task: ``check`` asks a yes/no question ("使用者是不是駝背？") and compares the
 answers; ``change`` compares the photo with a reference photo (kept only in the browser) or,
 without one, with a text description of it; ``report`` describes the scene every run (定時
-告訴我這邊的情況), and MEMO tells it together with the room's readings. A change task with
-``watch`` is also watched continuously by the page, which asks for a photo the moment the
-watched region changes and stays changed.
+告訴我這邊的情況), and MEMO tells it together with the room's readings. A change or check
+task with ``watch`` is also watched continuously by the page, which asks for a photo the
+moment the watched region changes and stays changed (「鑰匙還在嗎？」 is asked again then).
 
 Photos are never stored. Every capture, even an unusable or skipped one, is recorded with
 its quality and a scene record: people (人), activity (事), time (時, the capture time),
@@ -104,7 +104,8 @@ def validate_look(raw, fallback_question: str = "") -> dict | None:
     ``alert_on`` is the answer worth telling: "yes" for 「我有沒有駝背」, "no" for
     「電腦有沒有關機」. ``notify`` decides when MEMO speaks: on_alert (that answer appears,
     persists or goes away), on_change (the answer changes) or always (every run); a report
-    always speaks. ``watch`` (change tasks only) keeps the page watching between runs. ``on``
+    always speaks. ``watch`` keeps the page watching between runs (a change task, or a check
+    such as 「鑰匙還在嗎？」 asked again whenever the region changes). ``on``
     lists sensor triggers (TRIGGER_LABELS) that also run the task; kept only when not empty."""
     raw = raw if isinstance(raw, dict) else {}
     mode = raw.get("mode", "check")
@@ -121,7 +122,7 @@ def validate_look(raw, fallback_question: str = "") -> dict | None:
         return None
     look = {"mode": mode, "question": question, "alert_on": alert_on, "notify": notify}
     look["roi"] = validate_roi(raw.get("roi"))
-    look["watch"] = mode == "change" and raw.get("watch") is True
+    look["watch"] = mode != "report" and raw.get("watch") is True
     on = raw.get("on") if isinstance(raw.get("on"), list) else []
     if triggers := [item for item in dict.fromkeys(on) if item in TRIGGER_LABELS]:
         look["on"] = triggers

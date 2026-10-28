@@ -58,7 +58,9 @@ def test_safety_checks_may_be_frequent_only_for_watched_tasks():
     look = {"mode": "change", "question": "箱子", "watch": True}
     base = {"type": "schedule", "kind": "interval", "purpose": "look", "message": "箱子"}
     assert validate_action(base | {"minutes": 1, "look": look})["minutes"] == 1
-    assert validate_action(base | {"minutes": 1, "look": look | {"watch": False}}) is None
+    # Asked for more often than every 5 minutes, a look task is watched rather than refused.
+    frequent = validate_action(base | {"minutes": 1, "look": look | {"watch": False}})
+    assert frequent["look"]["watch"] is True
     assert validate_action(base | {"minutes": 1, "purpose": "remind"}) is None
 
 

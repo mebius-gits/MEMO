@@ -11,7 +11,7 @@ from uuid import uuid4
 
 from sqlalchemy import select, update
 
-from memo.domain.schedule import describe, first_run, following_run, same_thing
+from memo.domain.schedule import describe, first_run, following_run, same_thing, step
 from memo.infrastructure.database import (
     EventStateRow,
     ReadingRow,
@@ -42,6 +42,7 @@ def job_description(job: ScheduledJobRow, tz: str) -> str:
         job.next_run_at,
         tz,
         job.look,
+        job.seconds,
     )
     return text + ("（已暫停）" if job.status == "paused" else "")
 
@@ -80,6 +81,7 @@ class ScheduleRepository:
             purpose=action["purpose"],
             message=action["message"],
             minutes=action.get("minutes"),
+            seconds=action.get("seconds"),
             time_of_day=action.get("time"),
             # A follow-up compares against what the air was like when the user acted.
             baseline=latest_metrics(self.session, device_id)
@@ -152,8 +154,16 @@ class ScheduleRepository:
         kind = action["type"]
         if kind == "schedule":
             if twin := self.watching(device_id, action):
-                # 「幫我顧著箱子」 twice, or in other words, keeps one watch.
-                return "已經在盯了：" + job_description(twin, self.tz)
+                # 「幫我顧著箱子」 twice, or in other words, keeps one watch; a new pace
+                # (「改成每 30 秒」) changes it.
+                pace = (action.get("minutes"), action.get("seconds"))
+                if pace == (twin.minutes, twin.seconds):
+                    return "已經在盯了：" + job_description(twin, self.tz)
+                twin.minutes, twin.seconds = pace
+                twin.next_run_at = now + step(*pace)
+                twin.updated_at = now
+                self.session.commit()
+                return "已改成：" + job_description(twin, self.tz)
             job = self.create(device_id, action, now, session_id)
             self.session.commit()
             return "已設定：" + job_description(job, self.tz)
@@ -172,7 +182,13 @@ class ScheduleRepository:
                 forget(self.session, job.id)
             if kind == "resume" and job.next_run_at and job.next_run_at <= now:
                 job.next_run_at = following_run(
-                    job.kind, job.minutes, job.time_of_day, job.next_run_at, now, self.tz
+                    job.kind,
+                    job.minutes,
+                    job.time_of_day,
+                    job.next_run_at,
+                    now,
+                    self.tz,
+                    job.seconds,
                 ) or (now + timedelta(minutes=1))
         self.session.commit()
         verb = {"cancel": "已取消", "pause": "已暫停", "resume": "已恢復"}[kind]
@@ -212,13 +228,13 @@ def fire_due(sessions, now: datetime, tz: str, vision_unavailable: str | None = 
         ).all()
         for job in due:
             following = following_run(
-                job.kind, job.minutes, job.time_of_day, job.next_run_at, now, tz
+                job.kind, job.minutes, job.time_of_day, job.next_run_at, now, tz, job.seconds
             )
             if following is None and job.runs == 0 and (job.look or {}).get("mode") == "change":
                 # A one-off change task: the first run was its baseline, now the comparison.
                 # A sensor task's baseline is its only scheduled run; sensors start the rest.
                 if job.kind != "event":
-                    following = job.next_run_at + timedelta(minutes=job.minutes)
+                    following = job.next_run_at + step(job.minutes, job.seconds)
             run = job.runs + 1
             claimed = session.execute(
                 update(ScheduledJobRow)

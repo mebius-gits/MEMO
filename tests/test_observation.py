@@ -137,7 +137,9 @@ def test_report_now_phrases():
 def test_report_and_watch_tasks():
     report = validate_look({"mode": "report", "question": "這邊的情況", "notify": "on_alert"})
     assert report["notify"] == "always" and report["watch"] is False
-    assert validate_look({"mode": "check", "question": "x", "watch": True})["watch"] is False
+    # A check can be watched too (「鑰匙還在嗎？」 asked again when the region changes).
+    assert validate_look({"mode": "check", "question": "x", "watch": True})["watch"] is True
+    assert validate_look({"mode": "report", "question": "x", "watch": True})["watch"] is False
     watched = validate_look({"mode": "change", "question": "箱子", "watch": True})
     assert watched["watch"] is True
     parsed = parse_observation(

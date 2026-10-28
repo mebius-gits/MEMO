@@ -120,6 +120,8 @@ class ScheduledJobRow(Base):
     purpose: Mapped[str] = mapped_column(String(16))  # remind | summary | followup | look
     message: Mapped[str] = mapped_column(String(120))
     minutes: Mapped[int | None] = mapped_column(Integer)
+    # Instead of minutes, for a span that is not whole minutes (「10 秒後」「每 30 秒」).
+    seconds: Mapped[int | None] = mapped_column(Integer)
     time_of_day: Mapped[str | None] = mapped_column(String(5))
     baseline: Mapped[dict | None] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(

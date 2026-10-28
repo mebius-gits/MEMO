@@ -2729,6 +2729,11 @@ components:
           - type: integer
           - type: 'null'
           title: Minutes
+        seconds:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Seconds
         time_of_day:
           anyOf:
           - type: string
@@ -3959,7 +3964,17 @@ components:
             minimum: 1.0
           - type: 'null'
           title: Minutes
-          description: once／followup：幾分鐘後；interval：間隔（至少 5 分鐘，持續盯著的拍照任務至少 1 分鐘）
+          description: once／followup：幾分鐘後；interval：間隔（至少 5 分鐘，持續盯著的拍照任務至少 1 分鐘；拍照任務不到
+            5 分鐘會自動改成持續盯著）
+        seconds:
+          anyOf:
+          - type: integer
+            maximum: 86400.0
+            minimum: 5.0
+          - type: 'null'
+          title: Seconds
+          description: 不用 minutes 時以秒計：once 至少 5 秒、followup 至少 10 秒；interval 只有拍照任務能用，至少
+            10 秒，並自動改成持續盯著
         time:
           anyOf:
           - type: string

@@ -608,7 +608,7 @@ function renderLooks(jobs, records) {
       element('p', { className: 'look-last', textContent: mine[0] ? recordLine(mine[0]) : '還沒有紀錄' }),
       mine.length > 0 && element('details', {}, element('summary', { textContent: `紀錄（${mine.length}）` }),
         element('ol', {}, ...mine.slice(0, 12).map(record => element('li', {}, element('span', { textContent: recordLine(record) }), sceneLine(record.scene) && element('small', { textContent: sceneLine(record.scene) }))))),
-      element('div', { className: 'look-actions' }, button('框選範圍', 'roi'), job.look?.mode === 'change' && button(job.look.watch ? '停止盯著' : '持續盯著', 'watch'), button(job.status === 'paused' ? '恢復' : '暫停', 'toggle'), button('刪除', 'delete')));
+      element('div', { className: 'look-actions' }, button('框選範圍', 'roi'), job.look && job.look.mode !== 'report' && button(job.look.watch ? '停止盯著' : '持續盯著', 'watch'), button(job.status === 'paused' ? '恢復' : '暫停', 'toggle'), button('刪除', 'delete')));
   }));
 }
 async function lookAction(job, action) {

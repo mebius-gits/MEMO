@@ -175,9 +175,9 @@ export function measureQuality(rgba, width, height) {
 // Chat phrasings that mean "look at this through the camera"; the same list as the backend's
 // memo.domain.vision.LOOK_REQUEST. The model's {"type":"look"} covers everything else.
 export const LOOK_REQUEST = /手上|手裡|手中|拿著|拿的(是|東西)|這(個|是|張|本|瓶|罐|盒|些|上面)?是什麼|這是啥|翻譯(一下)?(這|它|上面|看看)|上面寫(的|著)?(是)?什麼|寫(的|著)?是什麼|(看|瞧)(一下|看)?(這個|這|我手|我拿|我現在)|你看得到(我|這)|幫我看(一下|看)?(這|我)/;
-// 「幫我顧著箱子」「幫我看我的東西有沒有被動過」 set up a watched task instead; the same
-// phrasings as the backend's memo.domain.schedule.parse_watch.
-export const WATCH_REQUEST = /(幫我|替我|請你?|你)(顧|盯|守|看好|看住|看緊|看著)|有沒有被?人?(動|碰|拿|翻|移)|有人(動|碰|拿|翻)/;
+// 「幫我顧著箱子」「幫我看我的東西有沒有被動過」「每 30 秒看這裡」「幫我注意家裡」 set up a
+// task instead; the same phrasings as the backend's memo.domain.schedule.parse_watch.
+export const WATCH_REQUEST = /(幫我|替我|請你?|你)(顧|盯|守|看好|看住|看緊|看著)|有沒有被?人?(動|碰|拿|翻|移)|有人(動|碰|拿|翻)|每(隔)?\s*[0-9零一二兩三四五六七八九十百半]+\s*(秒|分|個?小時|個?鐘頭)|(觀察|注意|留意)(一下)?(這裡|這邊|房間|四周|周圍|家裡|屋裡|客廳)/;
 export const wantsLook = text => LOOK_REQUEST.test(text || '') && !WATCH_REQUEST.test(text || '');
 
 // What the voice reads: quoted foreign text (「Fragile」意思是易碎品) is shown, not spoken,

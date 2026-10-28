@@ -43,7 +43,14 @@ class ScheduleCreate(Schema):
         ge=1,
         le=1440,
         description="once／followup：幾分鐘後；interval：間隔"
-        "（至少 5 分鐘，持續盯著的拍照任務至少 1 分鐘）",
+        "（至少 5 分鐘，持續盯著的拍照任務至少 1 分鐘；拍照任務不到 5 分鐘會自動改成持續盯著）",
+    )
+    seconds: int | None = Field(
+        default=None,
+        ge=5,
+        le=86400,
+        description="不用 minutes 時以秒計：once 至少 5 秒、followup 至少 10 秒；"
+        "interval 只有拍照任務能用，至少 10 秒，並自動改成持續盯著",
     )
     time: str | None = Field(
         default=None, pattern=r"^([01]?\d|2[0-3]):[0-5]\d$", description="daily：台北時間 HH:MM"
@@ -60,6 +67,7 @@ class JobOutput(Schema):
     purpose: Literal["remind", "summary", "followup", "look"]
     message: str
     minutes: int | None
+    seconds: int | None = None
     time_of_day: str | None
     status: Literal["active", "paused", "done", "cancelled"]
     next_run_at: datetime | None
@@ -82,7 +90,17 @@ class DigestOutput(Schema):
 
 
 def job_output(job: ScheduledJobRow, tz: str) -> dict:
-    fields = ("id", "kind", "purpose", "message", "minutes", "time_of_day", "status", "look")
+    fields = (
+        "id",
+        "kind",
+        "purpose",
+        "message",
+        "minutes",
+        "seconds",
+        "time_of_day",
+        "status",
+        "look",
+    )
     return {key: getattr(job, key) for key in fields} | {
         "next_run_at": job.next_run_at,
         "runs": job.runs,
@@ -131,7 +149,15 @@ def update_schedule(device_id: str, job_id: str, payload: ScheduleUpdate, memory
     if payload.status == "active" and job.next_run_at and job.next_run_at <= now:
         # A job resumed after its due time runs at its next slot, not immediately in a burst.
         job.next_run_at = (
-            following_run(job.kind, job.minutes, job.time_of_day, job.next_run_at, now, memory.tz)
+            following_run(
+                job.kind,
+                job.minutes,
+                job.time_of_day,
+                job.next_run_at,
+                now,
+                memory.tz,
+                job.seconds,
+            )
             or now
         )
     memory.session.commit()
