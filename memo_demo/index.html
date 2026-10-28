@@ -41,22 +41,18 @@
             </div>
           </section>
           <section class="group" aria-labelledby="eye-title">
-            <h3 id="eye-title">鏡頭<span id="looks-state" class="fresh" hidden></span></h3>
-            <p id="eye-idle" class="hint">打開右上角的鏡頭，MEMO 會觀察這裡；也可以用說的指派，例如「幫我顧著桌上的箱子」「每 30 分鐘告訴我這邊的情況」。照片不保存，只留下紀錄。</p>
+            <h3 id="eye-title">任務<span id="looks-state" class="fresh" hidden></span></h3>
+            <p id="eye-idle" class="hint">打開右上角的鏡頭，MEMO 會觀察這裡；也可以用說的指派，例如「幫我監控水壺」「10 分鐘後提醒我喝水」。照片不保存，只留下紀錄。</p>
             <div id="eye-body" hidden>
-              <div class="seg views" role="radiogroup" aria-label="鏡頭內容">
-                <label><input type="radio" name="eye-view" value="now" checked /><span>現在</span></label>
-                <label><input type="radio" name="eye-view" value="tasks" /><span id="looks-tab">任務</span></label>
+              <p id="observe-now" class="observe-now" hidden></p>
+              <p id="looks-empty" class="hint">還沒有任務。用說的指派，例如「幫我監控水壺」「每天 23:00 看一下電腦有沒有關」；說「刪掉水壺的任務」就會刪掉。</p>
+              <div id="tasks-short" class="task-group" hidden>
+                <h4>短期<span class="count"></span><small>做一次就結束</small></h4>
+                <ul id="looks-short" class="looks"></ul>
               </div>
-              <div id="view-now" class="view">
-                <p id="observe-now" class="observe-now" hidden></p>
-                <p id="observe-empty" class="hint">今天還沒有紀錄。有人來去、動物出現、看守的東西被動、環境變化，都會記在這裡。</p>
-                <ol id="observe-log" class="observe-log"></ol>
-                <button id="observe-clear" class="btn small" type="button">清除觀察日誌</button>
-              </div>
-              <div id="view-tasks" class="view" hidden>
-                <p id="looks-empty" class="hint">還沒有任務。用說的指派，例如「幫我顧著桌上的箱子」「每天 23:00 看一下電腦有沒有關」。</p>
-                <ul id="looks-list" class="looks"></ul>
+              <div id="tasks-timed" class="task-group" hidden>
+                <h4>定時<span class="count"></span><small>持續盯著、每隔一段時間或每天</small></h4>
+                <ul id="looks-timed" class="looks"></ul>
               </div>
             </div>
           </section>

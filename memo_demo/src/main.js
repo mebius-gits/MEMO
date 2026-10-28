@@ -289,6 +289,7 @@ async function chat(text, { photo = false } = {}) {
     showEmotion(reply.emotion);
     lookAgain = reply.look_requested && camera.active;
     if (reply.actions?.some(action => action.includes('持續盯著'))) offerRoi(selected);
+    else if (reply.actions?.length) syncLooks(selected).catch(() => {}); // set up or deleted by voice
   } catch (error) { say(error.message, { quote: text }); showEmotion({ label: 'error', intensity: .5 }); }
   finally { chatting = false; $('#send-message').disabled = false; lastReplyAt = performance.now(); }
   if (lookAgain) chat(text, { photo: true });
@@ -439,10 +440,10 @@ const camera = createCamera({ onChange: renderCamera });
 $('#camera-preview').appendChild(camera.video);
 const gaze = createGaze(), expressions = createExpressionReader(), waves = createWaveDetector();
 function updateTitle() { document.title = camera.active && document.hidden ? `📷 ${baseTitle}` : baseTitle; }
-// The camera section folds to a hint while the camera is off and there is nothing to show.
-const eye = { logged: 0, jobs: 0 };
+// The tasks section folds to a hint while the camera is off and there is no task.
+const eye = { jobs: 0 };
 function renderEye() {
-  $('#eye-body').hidden = !camera.active && !eye.logged && !eye.jobs;
+  $('#eye-body').hidden = !camera.active && !eye.jobs;
   $('#eye-idle').hidden = !$('#eye-body').hidden;
 }
 function renderCamera(state) {
@@ -515,42 +516,47 @@ function startLooks() {
   runner.start();
 }
 
-// Camera section, two views: 現在 (what MEMO sees now and today's log: what the camera saw,
-// what look tasks found, the room's events, marked when MEMO said it out loud) and 任務 (the
-// look tasks). With the camera off and nothing to show it folds to one line of hint.
-const SOURCE_WORDS = { observe: '鏡頭', look: '任務', environment: '環境' };
-function showView(view) {
-  $(`input[name="eye-view"][value="${view}"]`).checked = true;
-  $('#view-now').hidden = view !== 'now'; $('#view-tasks').hidden = view !== 'tasks';
-  storage.set('memo.eyeView', view);
-}
-document.querySelectorAll('input[name="eye-view"]').forEach(input => { input.onchange = () => showView(input.value); });
-showView(storage.get('memo.eyeView') === 'tasks' ? 'tasks' : 'now');
+// Tasks section: one line of what MEMO sees now (the observation log stays in the
+// backend for MEMO to answer from, not on screen), then the tasks: 短期 (done once) and 定時
+// (watched, every so often, daily). With the camera off and no task it folds to a hint.
 let observationSyncedAt = -Infinity;
 async function syncObservation(device) {
   observationSyncedAt = performance.now();
-  const base = `/api/v1/devices/${encodeURIComponent(device)}`;
-  const [state, log] = await Promise.all([request(`${base}/observation`), request(`${base}/observation/log?hours=24&limit=30`)]);
+  const state = await request(`/api/v1/devices/${encodeURIComponent(device)}/observation`);
   if (device !== activeDevice) return;
   const now = state.now;
   const parts = now ? [now.summary || (now.people != null && `${now.people} 人`), now.lighting && `光線${now.lighting}`].filter(Boolean) : [];
   $('#observe-now').textContent = now ? `${now.seen_at}　${parts.join('・')}` : 'MEMO 正在看第一眼…';
   $('#observe-now').hidden = !now && !camera.active;
-  $('#observe-log').replaceChildren(...log.map(entry => element('li', { className: entry.spoken ? 'spoken' : '' },
-    element('time', { textContent: clockOf(entry.at) }),
-    element('span', { className: 'tag', textContent: SOURCE_WORDS[entry.source] || entry.source }),
-    element('span', { textContent: entry.text }))));
-  $('#observe-empty').hidden = log.length > 0;
-  eye.logged = log.length; renderEye();
 }
-$('#observe-clear').onclick = async () => {
-  if (!confirm('要清除觀察日誌嗎？MEMO 記得的現場也會一起清掉。')) return;
-  try { await request(`/api/v1/devices/${encodeURIComponent(activeDevice)}/observation/log`, { method: 'DELETE' }); await syncObservation(activeDevice); }
-  catch (error) { toast(error.message); }
-};
 
-// Look tasks panel: each task with its latest record and history (answer, photo quality,
-// and the scene: 人、事、時、地、物、動作). Photos themselves are never kept.
+// Tasks: reminders, and look tasks with their latest record and history (answer, photo
+// quality, and the scene: 人、事、時、地、物、動作). Photos themselves are never kept.
+const SHORT_KINDS = ['once', 'followup'];
+const PURPOSE_WORDS = { look: '拍照', remind: '提醒', summary: '摘要', followup: '追蹤' };
+// memo.domain.vision.TRIGGER_LABELS
+const TRIGGER_WORDS = { light: '燈光變化', co2_high: 'CO₂ 偏高', co2_rising: 'CO₂ 上升', temperature_high: '太熱', temperature_low: '太冷', temperature_rising: '變熱', humidity_high: '太潮濕', humidity_low: '太乾' };
+const spanOf = job => job.seconds ? `${job.seconds} 秒` : job.minutes % 60 === 0 ? `${job.minutes / 60} 小時` : `${job.minutes} 分鐘`;
+function untilWords(iso) {
+  const minutes = Math.round((new Date(iso) - Date.now()) / 60000);
+  return minutes <= 0 ? '快到了' : minutes < 60 ? `還有 ${minutes} 分鐘` : `還有 ${Math.round(minutes / 60)} 小時`;
+}
+// A card's title is the thing itself; when and how it runs goes on one line under it.
+function taskTitle(job) {
+  if (job.purpose === 'followup') return `${job.message}之後的變化`;
+  if (job.purpose === 'summary') return '環境摘要';
+  return job.look?.watch && job.look.mode === 'check' ? job.look.question : job.message;
+}
+function taskMeta(job) {
+  const look = job.look || {}, at = job.next_run_at && clockOf(job.next_run_at);
+  const on = (look.on || []).map(trigger => TRIGGER_WORDS[trigger] || trigger).join('、');
+  if (job.kind === 'event') return `${on}時看`;
+  const when = job.kind === 'daily' ? `每天 ${job.time_of_day}`
+    : SHORT_KINDS.includes(job.kind) ? (at ? `${at}（${untilWords(job.next_run_at)}）` : '')
+    : look.watch ? `${look.mode === 'check' ? '盯著在不在' : '持續盯著'}・每 ${spanOf(job)}確認`
+    : `每 ${spanOf(job)}${at ? `・下次 ${at}` : ''}`;
+  return [when, on && `${on}時也看`].filter(Boolean).join('・');
+}
 const RESULT_WORDS = { yes: '是', no: '否', unknown: '看不出來', skipped: '沒拍到' };
 const REASON_WORDS = { camera_off: '鏡頭沒開', permission_denied: '鏡頭權限被拒絕', camera_unavailable: '找不到鏡頭', no_capture: '網頁沒有回應', no_confirmation: '沒拍到確認照', quiet_hours: '勿擾時段', vision_unavailable: '模型不支援看圖', model_not_configured: '沒有設定模型', model_timeout: '模型逾時', model_unavailable: '模型連不上', invalid_model_output: '模型回覆無法解讀', vision_busy: '正在分析上一張', analysis_interrupted: '分析中斷' };
 const QUALITY_WORDS = { dark: '太暗', overexposed: '過亮', low_contrast: '對比太低', blurry: '模糊' };
@@ -571,10 +577,10 @@ function recordLine(record) {
 async function syncLooks(device) {
   looksSyncedAt = performance.now();
   const base = `/api/v1/devices/${encodeURIComponent(device)}`;
-  const jobs = (await request(`${base}/schedules`)).filter(job => job.purpose === 'look');
-  const records = jobs.length ? await request(`${base}/vision/observations?limit=80`) : [];
+  const jobs = await request(`${base}/schedules`);
+  const records = jobs.some(job => job.purpose === 'look') ? await request(`${base}/vision/observations?limit=80`) : [];
   if (device === activeDevice) renderLooks(jobs, records);
-  return jobs;
+  return jobs.filter(job => job.purpose === 'look');
 }
 // A new watched task: framing the thing makes small changes count and keeps people walking
 // by out of it, so MEMO offers the region editor right away.
@@ -582,27 +588,43 @@ async function offerRoi(device) {
   const jobs = await syncLooks(device).catch(() => []);
   const job = jobs.filter(item => item.look?.watch && !item.look.roi).sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
   if (!job || device !== activeDevice) return;
-  showView('tasks');
-  if (!camera.active) { toast('打開鏡頭後，可以在「鏡頭」的「任務」按「框選範圍」框出要盯著的東西。'); return; }
+  if (!camera.active) { toast('打開鏡頭後，可以在「任務」按「框選範圍」框出要盯著的東西。'); return; }
   toast('框出要盯著的東西，小小的變化也看得出來；不框就看整個畫面。');
   openRoi(job);
 }
 function renderLooks(jobs, records) {
   const active = jobs.filter(job => job.status === 'active').length;
   $('#looks-state').textContent = `${active} 個任務進行中`; $('#looks-state').hidden = !active;
-  $('#looks-tab').textContent = jobs.length ? `任務（${jobs.length}）` : '任務';
   $('#looks-empty').hidden = jobs.length > 0;
   eye.jobs = jobs.length; renderEye();
-  $('#looks-list').replaceChildren(...jobs.map(job => {
-    const mine = records.filter(record => record.job_id === job.id && record.decision !== 'confirm');
-    const button = (text, action) => element('button', { type: 'button', className: 'btn small', textContent: text, onclick: () => lookAction(job, action) });
-    return element('li', { className: 'look' },
-      element('div', { className: 'look-head' }, element('b', { textContent: job.description }), element('span', { className: 'tag', textContent: job.status === 'paused' ? '已暫停' : '進行中' })),
-      element('p', { className: 'look-last', textContent: mine[0] ? recordLine(mine[0]) : '還沒有紀錄' }),
-      mine.length > 0 && element('details', {}, element('summary', { textContent: `紀錄（${mine.length}）` }),
+  const card = job => {
+    const button = (text, action, extra = '') => element('button', { type: 'button', className: `btn small ${extra}`.trim(), textContent: text, onclick: () => lookAction(job, action) });
+    const paused = job.status === 'paused', look = job.purpose === 'look';
+    const mine = look ? records.filter(record => record.job_id === job.id && record.decision !== 'confirm') : [];
+    // Watching is a real choice only for a task that repeats every 5 minutes or more; more
+    // often than that it is always watched.
+    const watchChoice = look && job.kind === 'interval' && job.look.mode !== 'report' && !job.seconds && job.minutes >= 5;
+    return element('li', { className: `look${paused ? ' paused' : ''}` },
+      element('div', { className: 'look-head' },
+        element('span', { className: `kind kind-${job.purpose}`, textContent: PURPOSE_WORDS[job.purpose] || job.purpose }),
+        element('b', { textContent: taskTitle(job), title: job.description }),
+        paused && element('span', { className: 'tag', textContent: '已暫停' })),
+      element('p', { className: 'task-meta', textContent: taskMeta(job) }),
+      mine[0] && element('p', { className: 'look-last', textContent: recordLine(mine[0]) }),
+      mine.length > 1 && element('details', {}, element('summary', { textContent: `紀錄（${mine.length}）` }),
         element('ol', {}, ...mine.slice(0, 12).map(record => element('li', {}, element('span', { textContent: recordLine(record) }), sceneLine(record.scene) && element('small', { textContent: sceneLine(record.scene) }))))),
-      element('div', { className: 'look-actions' }, button('框選範圍', 'roi'), job.look && job.look.mode !== 'report' && button(job.look.watch ? '停止盯著' : '持續盯著', 'watch'), button(job.status === 'paused' ? '恢復' : '暫停', 'toggle'), button('刪除', 'delete')));
-  }));
+      element('div', { className: 'look-actions' },
+        look && button('框選範圍', 'roi'),
+        watchChoice && button(job.look.watch ? '停止盯著' : '持續盯著', 'watch'),
+        button(paused ? '恢復' : '暫停', 'toggle'),
+        button('刪除', 'delete', 'quiet danger')));
+  };
+  const byTime = (a, b) => (a.next_run_at || '9').localeCompare(b.next_run_at || '9');
+  for (const [group, mine] of [['short', jobs.filter(job => SHORT_KINDS.includes(job.kind))], ['timed', jobs.filter(job => !SHORT_KINDS.includes(job.kind))]]) {
+    $(`#tasks-${group}`).hidden = !mine.length;
+    $(`#tasks-${group} .count`).textContent = mine.length;
+    $(`#looks-${group}`).replaceChildren(...mine.sort(byTime).map(card));
+  }
 }
 async function lookAction(job, action) {
   const path = `/api/v1/devices/${encodeURIComponent(activeDevice)}/schedules/${job.id}`;
@@ -611,8 +633,10 @@ async function lookAction(job, action) {
     if (action === 'watch') await request(`${path}/look`, { method: 'PUT', body: JSON.stringify({ watch: !job.look.watch }) });
     if (action === 'toggle') await request(path, { method: 'PATCH', body: JSON.stringify({ status: job.status === 'paused' ? 'active' : 'paused' }) });
     if (action === 'delete') {
-      if (!confirm(`要刪除「${job.description}」嗎？\n這個任務的拍照紀錄也會一起刪除。`)) return;
-      await request(path, { method: 'DELETE' }); await references.remove(job.id);
+      const records = job.purpose === 'look' ? '\n這個任務的拍照紀錄也會一起刪除。' : '';
+      if (!confirm(`要刪除「${job.description}」嗎？${records}`)) return;
+      await request(path, { method: 'DELETE' });
+      if (job.purpose === 'look') await references.remove(job.id);
     }
     await syncLooks(activeDevice);
   } catch (error) { toast(error.message); }
