@@ -1,17 +1,21 @@
-"""MEMO knows it can see, and keeps one watch per thing."""
+"""MEMO knows it can see, keeps one watch per thing, and does not repeat itself about the room."""
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
 from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from memo.application.interaction import InteractionService
+from memo.domain.entities import Reading
 from memo.domain.interaction import InteractionInput, Personality
 from memo.domain.schedule import same_thing, watched_thing
+from memo.infrastructure.database import EventUpdateRow, TaskMemoryRow
+from memo.infrastructure.repository import SqlAlchemyRepository
 from memo.infrastructure.settings import Settings
 from memo.main import create_app
 
@@ -91,3 +95,69 @@ def test_a_question_about_the_camera_leaves_the_room_out():
     assert prepare("箱子剛剛有被動過嗎", **asked).environment_relevant is False
     assert prepare("剛剛有人動箱子嗎？房間好悶", **asked).environment_relevant is True
     assert prepare("現在這邊怎樣", **asked).environment_relevant is True
+
+
+# ---- Quieter about the room ----------------------------------------------------------------
+
+
+def feed(application, start, values, every=5, deliver=True):
+    """CO₂ readings; with ``deliver`` the page shows each notice as soon as it is ready."""
+    with application.state.session_factory() as session:
+        repository = SqlAlchemyRepository(session)
+        for i, co2 in enumerate(values):
+            at = start + timedelta(seconds=every * i)
+            repository.add_reading(
+                Reading(
+                    message_id=uuid4().hex,
+                    device_id="room",
+                    observed_at=at,
+                    received_at=at,
+                    sequence=i,
+                    temperature_c=25,
+                    humidity_pct=50,
+                    co2_ppm=co2,
+                    quality="ok",
+                )
+            )
+            for row in session.scalars(
+                select(TaskMemoryRow).where(TaskMemoryRow.status == "queued")
+            ):
+                row.status = "acknowledged" if deliver else row.status
+            session.commit()
+    return start + timedelta(seconds=every * len(values))
+
+
+def notices(application):
+    with application.state.session_factory() as session:
+        rows = session.scalars(select(TaskMemoryRow).order_by(TaskMemoryRow.created_at)).all()
+        return [(row.rule_id, row.event_status) for row in rows if row.status != "cancelled"]
+
+
+def test_co2_rising_then_high_is_said_once(app):
+    application, _ = app
+    start = datetime.now(timezone.utc) - timedelta(minutes=8)
+    feed(application, start, [800] * 14 + [1400] * 40)
+    assert notices(application) == [("co2_rising", "active")]
+    with application.state.session_factory() as session:
+        logged = session.scalars(
+            select(EventUpdateRow).where(EventUpdateRow.rule_id == "co2_high")
+        ).one()
+        assert logged.kind == "active" and logged.detail["spoken"] is False
+
+
+def test_an_all_clear_needs_a_heard_notice_and_trends_ease_quietly(app):
+    application, _ = app
+    start = datetime.now(timezone.utc) - timedelta(minutes=20)
+    after = feed(application, start, [800] * 14 + [1400] * 40)
+    # CO₂ high recovers: said, since the rise was heard. The rise easing off is not.
+    feed(application, after, [900] * 40)
+    assert notices(application) == [("co2_rising", "active"), ("co2_high", "resolved")]
+
+
+def test_an_unheard_event_recovers_quietly(app):
+    application, _ = app
+    start = datetime.now(timezone.utc) - timedelta(minutes=20)
+    after = feed(application, start, [1400] * 40, deliver=False)
+    assert notices(application) == [("co2_high", "active")]
+    feed(application, after, [900] * 40, deliver=False)  # the page was closed
+    assert notices(application) == []

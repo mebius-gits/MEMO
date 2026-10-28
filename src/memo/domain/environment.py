@@ -92,6 +92,13 @@ RULES = (
     ),
 )
 RULES_BY_ID = {rule.id: rule for rule in RULES}
+# Trend rules: a fast rise is worth a word, its easing off is not.
+TRENDS = frozenset(rule.id for rule in RULES if rule.window)
+
+
+def topic(rule_id: str) -> str:
+    """What a rule is about: co2_high and co2_rising are both about CO₂."""
+    return rule_id.split("_")[0]
 
 
 def level_of(rule: Rule, score: float) -> str:

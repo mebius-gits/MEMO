@@ -138,6 +138,9 @@ def test_sweep_detects_silence_without_new_readings(sessions):
         assert tasks[-1].rule_id == SENSOR_RULE and tasks[-1].event_status == "active"
         kinds = session.scalars(select(EventUpdateRow.kind).order_by(EventUpdateRow.id)).all()
         assert kinds == ["active", "unknown", "active"]
+        # The page delivered the outage notice, so the recovery is worth saying.
+        tasks[-1].status = "acknowledged"
+        session.commit()
         repo = SqlAlchemyRepository(session)
         back = last + timedelta(seconds=60)
         for i in range(3):

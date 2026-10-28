@@ -1,7 +1,7 @@
 """Transactional event projection, shared by HTTP and MQTT ingestion and the stale sweep."""
 
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from uuid import uuid4
 
@@ -13,12 +13,14 @@ from memo.domain.environment import (
     LEVEL_LABELS,
     RULES,
     SENSOR_RULE,
+    TRENDS,
     Rule,
     advance,
     configured,
     connectivity,
     connectivity_sweep,
     expire,
+    topic,
 )
 from memo.domain.observation import nobody_here
 from memo.domain.vision import LIGHT, light_jump
@@ -42,6 +44,10 @@ OBSERVE_RULE = "observe"
 METRICS = ("temperature_c", "humidity_pct", "co2_ppm", "illuminance_lux")
 # A jump in illuminance against a reading this recent counts as the light changing.
 LIGHT_GAP = timedelta(seconds=90)
+# After MEMO speaks about something (CO₂, temperature...), other notices about it within
+# this long stay in the log: CO₂ high right after CO₂ rising, a value flapping around its
+# threshold. Escalations and danger always get through.
+TOPIC_GAP = timedelta(minutes=10)
 
 
 @lru_cache(maxsize=1)
@@ -104,6 +110,41 @@ def spoken_last_hour(session, device_id, at) -> int:
     )
 
 
+def heard(session, device_id, rule_id, state) -> bool:
+    """Whether the page delivered a notice about this event, or about its topic shortly
+    before or while it was on (CO₂ rising, then CO₂ high held back)."""
+    query = select(TaskMemoryRow.rule_id).where(
+        TaskMemoryRow.device_id == device_id,
+        TaskMemoryRow.rule_id.not_in([SCHEDULE_RULE, OBSERVE_RULE]),
+        TaskMemoryRow.event_status != "resolved",
+        TaskMemoryRow.status == "acknowledged",
+    )
+    if since := state.get("active_since"):
+        start = datetime.fromtimestamp(since, timezone.utc) - TOPIC_GAP
+        query = query.where(TaskMemoryRow.created_at >= start)
+    else:
+        query = query.where(TaskMemoryRow.event_id == state.get("event_id"))
+    return any(topic(spoken) == topic(rule_id) for spoken in session.scalars(query))
+
+
+def worth_saying(session, device_id, rule_id, notice, state, at) -> bool:
+    """Whether a notice tells the person something they have not just heard."""
+    if notice == "escalated" or state.get("level") == "danger":
+        return True
+    if notice == "resolved":
+        # An easing trend is not news, and an event nobody heard about needs no all-clear.
+        return rule_id not in TRENDS and heard(session, device_id, rule_id, state)
+    recent = session.scalars(
+        select(TaskMemoryRow.rule_id).where(
+            TaskMemoryRow.device_id == device_id,
+            TaskMemoryRow.rule_id.not_in([SCHEDULE_RULE, OBSERVE_RULE]),
+            TaskMemoryRow.created_at >= at - TOPIC_GAP,
+            TaskMemoryRow.status != "cancelled",
+        )
+    )
+    return all(topic(spoken) != topic(rule_id) for spoken in recent)
+
+
 def cancel_undelivered(session, device_id, rule_id):
     session.execute(
         update(TaskMemoryRow)
@@ -161,6 +202,7 @@ def record(session, row, device_id, rule_id, before, state, kind, notice, at, po
         bool(notice)
         and policy.allows(notice, state.get("level"), at, spoken_last_hour(session, device_id, at))
         and (state.get("level") == "danger" or not nobody_seen(session, device_id, at))
+        and worth_saying(session, device_id, rule_id, notice, state, at)
     )
     if kind:
         detail = {"spoken": spoken} if notice else {}
