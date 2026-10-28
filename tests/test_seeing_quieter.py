@@ -12,8 +12,8 @@ from sqlalchemy import select
 
 from memo.application.interaction import InteractionService
 from memo.domain.entities import Reading
-from memo.domain.interaction import InteractionInput, Personality
-from memo.domain.schedule import same_thing, watched_thing
+from memo.domain.interaction import EmotionLabel, InteractionInput, Personality, Reply
+from memo.domain.schedule import parse_intent, same_thing, watched_thing
 from memo.infrastructure.database import EventUpdateRow, TaskMemoryRow
 from memo.infrastructure.repository import SqlAlchemyRepository
 from memo.infrastructure.settings import Settings
@@ -88,6 +88,53 @@ def test_a_watch_is_about_the_thing_not_the_question():
     assert same_thing("這箱子", "桌上的箱子")
     assert same_thing("我的筆電", "這台筆電")
     assert not same_thing("桌上的箱子", "門口的箱子")
+
+
+def test_monitoring_words_set_up_a_watch():
+    assert parse_intent("幫我監控水壺")["look"]["question"] == "水壺"
+    assert parse_intent("幫我監視門口")["look"]["watch"] is True
+    assert parse_intent("每30秒幫我監控水壺")["seconds"] == 30
+    assert parse_intent("開始監控")["look"]["on"] == ["co2_high", "co2_rising"]  # the space
+    assert parse_intent("不用再監控水壺了") == {"type": "cancel", "match": "水壺"}
+    assert parse_intent("我在監控我的血糖") is None  # talk, not a request
+
+
+def test_a_task_said_to_be_set_up_must_exist(app):
+    application, client = app
+
+    class Claiming:
+        """Says it set something up but sends no action, as the model sometimes does."""
+
+        def generate(self, prepared):
+            return Reply("好，已經幫你建立監控任務了！", EmotionLabel.HAPPY, 0.5, "model", None)
+
+    application.state.interaction_service = InteractionService(Claiming())
+    reply = chat(client, "幫我留意水壺")
+    assert reply["actions"] == [] and "還沒設定成功" in reply["text"]
+    assert client.get("/api/v1/devices/room/schedules").json() == []
+    # Said by the rules, the watch exists, and the reply may say so.
+    reply = chat(client, "幫我監控水壺")
+    assert reply["actions"] == ["已設定：持續盯著：水壺（每 2 分鐘再拍照確認一次）"]
+    assert "還沒設定成功" not in reply["text"]
+
+
+def test_tasks_can_be_deleted_by_voice(app):
+    _, client = app
+    chat(client, "幫我監控水壺")
+    chat(client, "10分鐘後提醒我喝水")
+    chat(client, "幫我顧著鑰匙")
+    assert len(client.get("/api/v1/devices/room/schedules").json()) == 3
+    assert chat(client, "刪掉水壺的任務")["actions"] == ["已取消：水壺"]
+    assert chat(client, "把鑰匙任務刪掉")["actions"] == ["已取消：鑰匙"]
+    left = client.get("/api/v1/devices/room/schedules").json()
+    assert [job["message"] for job in left] == ["喝水"]
+    # Nothing by that name: MEMO says so instead of sounding done.
+    reply = chat(client, "刪掉錢包的任務")
+    assert reply["actions"] == [] and "沒找到「錢包」" in reply["text"]
+    assert parse_intent("停止監控") is None  # names nothing: the model asks which
+    assert chat(client, "刪除所有任務")["actions"] == ["已取消：喝水"]
+    assert client.get("/api/v1/devices/room/schedules").json() == []
+    assert "目前沒有任務" in chat(client, "刪除所有任務")["text"]
 
 
 def test_a_question_about_the_camera_leaves_the_room_out():

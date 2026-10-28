@@ -131,7 +131,7 @@ test('chat messages that mean "look at this", and what the voice reads', () => {
   for (const text of ['我今天穿什麼顏色', '我穿的是什麼', '我現在在幹嘛', '你看到什麼', '你現在看得到什麼', '這是什麼顏色', '我看起來怎麼樣', '桌上有什麼']) assert.equal(wantsLook(text), true, text);
   for (const text of ['今天天氣如何', '看看明天行程', '你喜歡什麼顏色', '明天要穿什麼', '']) assert.equal(wantsLook(text), false, text);
   // Watching a thing sets up a watched task; no photo for it now.
-  for (const text of ['幫我看我的東西有沒有被動過', '幫我顧著這個箱子', '每30秒幫我觀看這裡狀態', '每 30 秒幫我看一下這個杯子', '幫我注意家裡']) assert.equal(wantsLook(text), false, text);
+  for (const text of ['幫我看我的東西有沒有被動過', '幫我顧著這個箱子', '每30秒幫我觀看這裡狀態', '每 30 秒幫我看一下這個杯子', '幫我注意家裡', '幫我監控這個水壺', '開始監控']) assert.equal(wantsLook(text), false, text);
   assert.equal(spokenText('「Fragile」意思是易碎品，要小心拿。'), '意思是易碎品，要小心拿。');
   assert.equal(spokenText('這是「早安」兩個字。'), '這是「早安」兩個字。');
   assert.equal(spokenText('「Hello」'), '「Hello」'); // never read nothing

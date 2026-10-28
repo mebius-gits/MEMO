@@ -6,13 +6,15 @@ from typing import Protocol
 
 from memo.domain.interaction import EmotionLabel, InteractionInput
 from memo.domain.observation import conversation_mode
-from memo.domain.schedule import parse_intent, validate_action
+from memo.domain.schedule import parse_intent, unbacked_claim, validate_action
 
 UNSET_ACTION = (
     "這個提醒我沒設定成功。可以換個說法，例如「10 分鐘後提醒我喝水」或「每天 9 點報環境摘要」。"
 )
 NO_LAMP = "燈光我沒辦法調，可以用網頁右側欄的「檯燈」切換。"
 UNSET_SEARCH = "我沒聽懂要查什麼，可以說「查一下明天台北天氣」這樣。"
+NOT_FOUND = "我沒找到「{match}」的任務，什麼都沒動。右側「任務」可以看目前有哪些。"
+NO_TASKS = "目前沒有任務，什麼都沒動。"
 
 
 class Searcher(Protocol):
@@ -102,6 +104,17 @@ class CompanionService:
             elif done := self.memory.apply_action(device_id, proposed, session_id):
                 actions_done.append(done)
                 mode = "assignment"
+        if parsed and parsed["type"] in ("cancel", "pause", "resume") and not actions_done:
+            # Nothing matched what was named: say so rather than let the reply sound done.
+            missing = NOT_FOUND.format(match=parsed["match"]) if parsed["match"] else NO_TASKS
+            reply = replace(reply, text=missing, emotion=EmotionLabel.CONFUSED)
+        elif (
+            not actions_done
+            and reply.action is None
+            and (honest := unbacked_claim(text, reply.text))
+        ):
+            # 「已建立」 with no task behind it: say so instead of letting it look done.
+            reply = replace(reply, text=honest, emotion=EmotionLabel.CONFUSED)
         response = {
             "request_id": request_id,
             "character": "MEMO",

@@ -224,7 +224,14 @@ def _message(text: str) -> str:
     return re.sub(r"[。！？!?,，～~啦喔哦吧呀了]+$", "", text).strip()
 
 
-_CANCEL = re.compile(r"(?:取消|刪除|刪掉|停止|關掉)(?P<what>.*?)的?提醒")
+_CANCEL = re.compile(
+    r"(?:取消|刪除|刪掉|停止|關掉|移除)(?P<what>.*?)的?(?P<noun>提醒|任務|監控|監視|看守)"
+)
+# 「把水壺任務刪掉」「水壺的任務刪掉」.
+_DROP = re.compile(
+    r"^把(?P<what>.+?)的?(?:任務|提醒|監控|看守)?(?:刪掉|刪除|取消|移除)(?:吧|了)?$|"
+    r"^(?P<named>.+?)的?(?:任務|提醒|監控|看守)(?:刪掉|刪除|取消|移除)(?:吧|了)?$"
+)
 _STOP = re.compile(r"(?:不用|不要|別)再?提醒我(?P<what>.+?)了?$")
 _PAUSE = re.compile(r"暫停(?:所有|全部)?(?P<what>.*?)的?提醒")
 _RESUME = re.compile(r"(?:恢復|繼續)(?:所有|全部)?(?P<what>.*?)的?提醒")
@@ -254,7 +261,8 @@ _LOOK_TASK = re.compile(
 # here, not by the model, so it is always a watched change task: one photo answering a yes/no
 # question cannot tell whether something was moved, and the user need not say how often.
 _WATCH_VERB = re.compile(
-    r"(?:幫我|替我|請你?|你)(?:顧|盯|守|看好|看住|看緊|看著)(?:著|住|好)?(?:一下)?"
+    r"(?:幫我|替我|請你?|你|用鏡頭)(?:顧|盯|守|看好|看住|看緊|看著|監控|監視|看守)(?:著|住|好)?"
+    r"(?:一下)?|^(?:開始|持續)?(?:監控|監視|看守)(?:著|一下)?"
 )
 _TOUCHED = re.compile(
     r"有沒有(?:被)?人?(?:動|碰|拿|翻|移)(?:過|走)?|有人(?:動|碰|拿|翻)過?(?=.*(?:就|的話|時))"
@@ -268,7 +276,7 @@ _SPACE_LOOK = re.compile(
     r"(?P<what>這裡|這邊|房間|四周|周圍|家裡|屋裡|客廳)(?:的)?(?:狀態|狀況|情況|動靜)?"
 )
 _UNWATCH = re.compile(
-    r"(?:不用|不要|別|停止|取消)再?(?:幫我)?(?:顧|盯|守|看著)(?:著|住)?(?P<what>.+)$"
+    r"(?:不用|不要|別|停止|取消)再?(?:幫我)?(?:顧|盯|守|看著|監控|監視|看守)(?:著|住)?(?P<what>.+)$"
 )
 _EVERY = re.compile(rf"每(?:隔)?(?P<n>{NUM}|半)?{UNIT}")
 _LEAD = re.compile(
@@ -340,6 +348,31 @@ def _watch(what: str, span: dict, look: dict) -> dict | None:
     )
 
 
+# A reply that says a task was set up. Checked against what the backend actually did: the
+# model sometimes says 「已建立」 without sending the action.
+_CLAIMED = re.compile(
+    r"已(?:經)?(?:幫你)?(?:建立|設定|設好|安排|開始)|(?:建立|設定|設好)(?:好)?了|"
+    r"開始(?:盯|監控|監視|看守|顧)|(?:幫你|會)(?:盯|顧|監控|監視|看守)(?:著|好)?"
+)
+# What asking for a task sounds like: watching something, a reminder, a schedule.
+_TASK_ASK = re.compile(
+    r"監控|監視|看守|盯|顧著|顧好|留意|注意|提醒|叫我|每(?:隔)?\s*[0-9零一二兩三四五六七八九十百半]|定時|"
+    r"秒後|分鐘後|小時後"
+)
+_LOOKING = re.compile(r"監控|監視|看守|盯|顧|留意|注意|鏡頭|拍")
+
+
+def unbacked_claim(message: str, reply: str) -> str | None:
+    """When a reply to a task request says it was set up but nothing was done, what to say
+    instead; None when the reply makes no such claim. 「已經在盯了」 about an existing task is
+    not a claim of something new."""
+    if not _TASK_ASK.search(message) or not _CLAIMED.search(reply) or "已經在" in reply:
+        return None
+    if _LOOKING.search(message):
+        return "這個我還沒設定成功。可以說「幫我顧著水壺」，或「每 30 秒幫我看水壺還在不在」。"
+    return "這個提醒我還沒設定成功。可以說「10 分鐘後提醒我喝水」或「每天 9 點報環境摘要」。"
+
+
 _SNOOZE = re.compile(
     r"(?:知道了|收到了?|晚點再說|等等再說|等一下再說|先不要提醒|(?:別|不要)再提醒我?了|"
     r"不要一直提醒|好啦好啦)"
@@ -351,8 +384,13 @@ def parse_intent(text: str) -> dict | None:
     # Search queries keep their spaces ("Python 3.14"); everything else matches without them.
     spaced = re.sub(r"\s+", " ", text.translate(_WIDE)).strip()
     text = re.sub(r"\s+", "", text.translate(_WIDE))
-    if match := _CANCEL.search(text):
+    # 「取消提醒」 alone cancels them all; 「停止監控」 alone names nothing, and 「停止監控水壺」
+    # names it after the verb (_UNWATCH below).
+    if (match := _CANCEL.search(text)) and (match["what"] or match["noun"] == "提醒"):
         return validate_action({"type": "cancel", "match": _message(match["what"])})
+    if match := _DROP.search(text):
+        what = _message(match["what"] or match["named"])
+        return validate_action({"type": "cancel", "match": what}) if what else None
     if (match := _STOP.search(text)) and _message(match["what"]):
         return validate_action({"type": "cancel", "match": _message(match["what"])})
     if match := _PAUSE.search(text):
