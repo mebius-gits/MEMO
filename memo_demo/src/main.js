@@ -257,18 +257,12 @@ $('#chat-input').addEventListener('paste', event => {
   const file = [...(event.clipboardData?.files || [])].find(item => item.type.startsWith('image/'));
   if (file) { event.preventDefault(); attachFile(file); }
 });
-// "MEMO 我手上拿的是什麼": with the camera on, MEMO counts down on its screen and takes a
-// photo before asking. When the model asks to look (look_requested), the same message is
-// sent again with a photo.
-const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
-async function lookCountdown() {
-  counting = true; $('#camera-preview').classList.add('big');
-  showEmotion({ label: 'looking', intensity: .5 });
-  try {
-    for (const n of [3, 2, 1]) { companion?.setCountdown(n); await wait(1000); }
-    companion?.setCountdown(null);
-    return (await camera.photo()).image;
-  } finally { counting = false; companion?.setCountdown(null); $('#camera-preview').classList.remove('big'); }
+// "MEMO 我手上拿的是什麼": with the camera on, MEMO takes a photo right away (the person is
+// already showing it) and asks with it. When the model asks to look (look_requested), the
+// same message is sent again with a photo, also right away.
+async function snap() {
+  snapping = true; showEmotion({ label: 'looking', intensity: .5 }); flashPhoto();
+  try { return (await camera.photo()).image; } finally { snapping = false; }
 }
 async function chat(text, { photo = false } = {}) {
   if (chatting) return;
@@ -279,11 +273,10 @@ async function chat(text, { photo = false } = {}) {
   $('#chat-input').value = ''; setAttachment(null);
   try {
     if (!image && camera.active && !photo && wantsReport(text)) {
-      // 「現在這邊怎樣」: MEMO looks around right away, no countdown.
+      // 「現在這邊怎樣」: MEMO looks around the whole room right away.
       flashPhoto(); image = (await camera.photo({ maxSide: 1024 })).image; photo = true;
     } else if (!image && camera.active && (photo || wantsLook(text))) {
-      if (!photo) say('拿到鏡頭前給我看，我數到三。', { quote: text, waiting: true });
-      image = await lookCountdown(); photo = true;
+      image = await snap(); photo = true;
     }
     if (image) text ||= '幫我看看這張圖';
     const quote = image ? `${text}（${photo ? '拍照' : '附圖'}）` : text;
@@ -438,7 +431,7 @@ async function deliverNotifications(device, currentGeneration = generation) {
 }
 // Camera: MEMO's eyes follow the person, its screen answers their expression, it waves back
 // while idle, and it takes photos when asked or when a look task is due. Off until turned on.
-let counting = false, lastReplyAt = 0, lastTyping = 0, tracking = null, looksSyncedAt = -Infinity, runner = null;
+let snapping = false, lastReplyAt = 0, lastTyping = 0, tracking = null, looksSyncedAt = -Infinity, runner = null;
 let cameraWanted = storage.get('memo.camera') === 'on';
 const CAMERA_STATES = { on: '觀察中', off: '鏡頭關著', denied: '鏡頭權限被拒絕', unavailable: '找不到可用的鏡頭', insecure: '鏡頭需要 localhost 或 HTTPS' };
 const baseTitle = document.title;
@@ -466,7 +459,7 @@ renderCamera('off');
 // MEMO waves back only when it is doing nothing else and the person is not typing.
 function idle() {
   const now = performance.now();
-  return !chatting && !talkingNow && !recording && !counting && !OWN_FACES.has(face.base.label)
+  return !chatting && !talkingNow && !recording && !snapping && !OWN_FACES.has(face.base.label)
     && now - lastReplyAt > 3000 && now - lastTyping > 2000 && !companion?.waving;
 }
 function waveBack() { if (companion?.paused) setMirror('happy', performance.now()); else companion?.wave(); }

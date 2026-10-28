@@ -205,8 +205,8 @@ export function createMemoScene(container) {
   const headAnchor = new THREE.Vector3(W / 2 - .1, H + .3, FRONT);
   let mood = 'neutral', intensity = .4, talking = false, paused = matchMedia('(prefers-reduced-motion: reduce)').matches;
   let lastFace = '', frameId;
-  // Pupil offset in screen pixels (eyes follow the person), the photo countdown, the wave.
-  let gaze = { x: 0, y: 0 }, countdown = null, waveStart = null;
+  // Pupil offset in screen pixels (eyes follow the person), the wave.
+  let gaze = { x: 0, y: 0 }, waveStart = null;
   // The screen shows either a face (eyes, mouth, optional brows/blush/sweat) or, for a few
   // states, a full-screen symbol instead of the face — never both.
   const EXPRESSIONS = {
@@ -242,12 +242,11 @@ export function createMemoScene(container) {
       }
       ctx.globalAlpha = 1;
     } else if (kind === 'look') {
-      // A viewfinder while MEMO takes a photo, with the countdown inside it.
+      // A viewfinder while MEMO takes a photo.
       ctx.strokeStyle = FACE; ctx.lineWidth = 30;
       for (const [x, y, dx, dy] of [[250, 140, 1, 1], [774, 140, -1, 1], [250, 586, 1, -1], [774, 586, -1, -1]]) line([[x, y + dy * 110], [x, y], [x + dx * 110, y]], 30);
       ctx.fillStyle = FACE;
-      if (countdown) { ctx.font = bold(300); ctx.fillText(String(countdown), 512, 380); }
-      else { ctx.beginPath(); ctx.arc(512, 363, 70, 0, Math.PI * 2); ctx.fill(); }
+      ctx.beginPath(); ctx.arc(512, 363, 70, 0, Math.PI * 2); ctx.fill();
     } else if (kind === 'wave') {
       // Level bars, like a recorder listening.
       ctx.fillStyle = FACE;
@@ -268,7 +267,7 @@ export function createMemoScene(container) {
     const look = EXPRESSIONS[mood] || EXPRESSIONS.neutral;
     // Animated symbols redraw ~10 times a second; faces only when something changes.
     const frame = ANIMATED.has(look.screen) && !paused ? Math.floor(performance.now() / 100) : 0;
-    const faceKey = look.screen ? `${look.screen}-${frame}-${countdown}` : `${mood}-${blink}-${mouthOpen}-${gaze.x},${gaze.y}`;
+    const faceKey = look.screen ? `${look.screen}-${frame}` : `${mood}-${blink}-${mouthOpen}-${gaze.x},${gaze.y}`;
     if (lastFace === faceKey) return;
     lastFace = faceKey;
     ctx.clearRect(0, 0, 1024, 726);
@@ -370,8 +369,6 @@ export function createMemoScene(container) {
     setTalking(value) { talking = value; },
     // Pupil offset in screen pixels, from perception.js's gaze.
     setGaze(offset) { gaze = { x: offset.x, y: offset.y }; },
-    // The number shown in the viewfinder while counting down to a photo (null: none).
-    setCountdown(value) { countdown = value; },
     wave() { if (!paused && waveStart === null) waveStart = performance.now(); },
     get waving() { return waveStart !== null; },
     // Desk lamp: off | dim | warm | day.
