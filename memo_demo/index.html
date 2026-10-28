@@ -40,22 +40,6 @@
               <div class="metric" data-metric="illuminance_lux"><span class="metric-name"><i data-icon="sun"></i>光照</span><div class="metric-number"><b id="lux-value">—</b><span>lux</span></div><svg class="sparkline" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true"></svg></div>
             </div>
           </section>
-          <section class="group" aria-labelledby="eye-title">
-            <h3 id="eye-title">任務<span id="looks-state" class="fresh" hidden></span></h3>
-            <p id="eye-idle" class="hint">打開右上角的鏡頭，MEMO 會觀察這裡；也可以用說的指派，例如「幫我監控水壺」「10 分鐘後提醒我喝水」。照片不保存，只留下紀錄。</p>
-            <div id="eye-body" hidden>
-              <p id="observe-now" class="observe-now" hidden></p>
-              <p id="looks-empty" class="hint">還沒有任務。用說的指派，例如「幫我監控水壺」「每天 23:00 看一下電腦有沒有關」；說「刪掉水壺的任務」就會刪掉。</p>
-              <div id="tasks-short" class="task-group" hidden>
-                <h4>短期<span class="count"></span><small>做一次就結束</small></h4>
-                <ul id="looks-short" class="looks"></ul>
-              </div>
-              <div id="tasks-timed" class="task-group" hidden>
-                <h4>定時<span class="count"></span><small>持續盯著、每隔一段時間或每天</small></h4>
-                <ul id="looks-timed" class="looks"></ul>
-              </div>
-            </div>
-          </section>
           <section class="group">
             <h3>檯燈<span id="lamp-state" class="fresh">白天光</span></h3>
             <div class="seg lamps" role="radiogroup" aria-label="檯燈模式">
@@ -77,6 +61,18 @@
             <label class="sr-only" for="persona-text">人格描述</label>
             <textarea id="persona-text" rows="3" maxlength="300" placeholder="描述 MEMO 的角色與說話方式，例如：講話像老派管家，有禮但會碎念。"></textarea>
           </section>
+          <section class="group" aria-labelledby="eye-title">
+            <h3 id="eye-title">任務<span id="looks-state" class="fresh" hidden></span></h3>
+            <p id="looks-empty" class="hint">還沒有任務。用說的指派，例如「幫我監控水壺」「10 分鐘後提醒我喝水」「每天 23:00 看一下電腦有沒有關」；說「刪掉水壺的任務」就會刪掉。</p>
+            <div id="tasks-short" class="task-group" hidden>
+              <h4>短期<span class="count"></span><small>做一次就結束</small></h4>
+              <ul id="looks-short" class="looks"></ul>
+            </div>
+            <div id="tasks-timed" class="task-group" hidden>
+              <h4>定時<span class="count"></span><small>持續盯著、每隔一段時間或每天</small></h4>
+              <ul id="looks-timed" class="looks"></ul>
+            </div>
+          </section>
           <section class="group">
             <h3>環境干擾<button id="node-red-toggle" class="state-toggle" type="button" aria-pressed="false" disabled>未連線</button></h3>
             <div class="sliders">
@@ -85,6 +81,13 @@
               <label><span>CO₂</span><output id="dist-co2_ppm-output">0 ppm</output><input id="dist-co2_ppm" data-offset="co2_ppm" data-unit="ppm" type="range" min="-200" max="1500" step="50" value="0" /></label>
             </div>
             <div class="actions"><button id="apply-disturbance" class="btn primary" disabled>套用干擾</button><button id="reset-disturbance" class="btn" disabled>恢復正常</button></div>
+          </section>
+          <section class="group" aria-labelledby="log-title">
+            <h3 id="log-title">日常紀錄<span id="observe-state" class="fresh">鏡頭沒開</span></h3>
+            <div id="observe-now" class="observe-now" hidden><p id="observe-seen"></p><p id="observe-tried" hidden></p></div>
+            <p id="observe-empty" class="hint">今天還沒有紀錄。打開右上角的鏡頭，MEMO 會觀察這裡；有人來去、動物出現、看守的東西被動、環境變化，都會記在這裡。照片不保存。</p>
+            <ol id="observe-log" class="observe-log"></ol>
+            <button id="observe-clear" class="btn small quiet" type="button" hidden>清除觀察紀錄</button>
           </section>
         </div>
       </aside>

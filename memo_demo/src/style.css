@@ -152,9 +152,18 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border: 2px sol
 .camera-preview { position: absolute; top: 108px; left: 24px; z-index: 1; width: 112px; aspect-ratio: 16 / 9; overflow: hidden; border: 2px solid var(--ink); border-radius: 12px; background: var(--ink); box-shadow: 2px 2px 0 var(--ink); transition: width .25s ease; }
 .camera-preview video, .roi-stage video { display: block; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
 
-/* Camera and tasks section: what MEMO sees now, and its tasks */
+/* A reply that reports what MEMO saw or measured */
 .bubble-tag { display: inline-block; margin-bottom: 6px; padding: 0 8px; border: 1.5px solid var(--ink); border-radius: 999px; background: var(--mint); font-size: 12px; color: #0B2B25; }
-.observe-now { margin: 0 0 10px; padding: 8px 12px; border: 2px solid var(--ink); border-radius: 12px; background: var(--surface-2); font-size: 14px; overflow-wrap: anywhere; }
+/* 日常紀錄: what MEMO saw last, then today's log */
+.observe-now { margin: 0 0 12px; padding: 8px 12px; border-left: 4px solid var(--mint); border-radius: 4px 12px 12px 4px; background: var(--surface-2); font-size: 14px; overflow-wrap: anywhere; }
+.observe-now p { margin: 0; }
+#observe-tried { margin-top: 4px; font-size: 13px; color: #8A4B00; }
+.observe-log { display: grid; gap: 6px; max-height: 260px; margin: 0 0 12px; padding: 0; overflow-y: auto; list-style: none; font-size: 13.5px; scrollbar-width: thin; }
+.observe-log:empty { display: none; }
+.observe-log li { display: grid; grid-template-columns: auto auto 1fr; align-items: baseline; gap: 8px; }
+.observe-log time { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+.observe-log span:last-child { overflow-wrap: anywhere; }
+.observe-log li.spoken span:last-child::after { content: " 🔊"; }
 
 /* Look tasks */
 .hint { margin: 0; font-size: 13.5px; color: var(--muted); }

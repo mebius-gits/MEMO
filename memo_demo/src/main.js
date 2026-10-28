@@ -440,12 +440,6 @@ const camera = createCamera({ onChange: renderCamera });
 $('#camera-preview').appendChild(camera.video);
 const gaze = createGaze(), expressions = createExpressionReader(), waves = createWaveDetector();
 function updateTitle() { document.title = camera.active && document.hidden ? `📷 ${baseTitle}` : baseTitle; }
-// The tasks section folds to a hint while the camera is off and there is no task.
-const eye = { jobs: 0 };
-function renderEye() {
-  $('#eye-body').hidden = !camera.active && !eye.jobs;
-  $('#eye-idle').hidden = !$('#eye-body').hidden;
-}
 function renderCamera(state) {
   const on = state === 'on', label = on ? '關閉鏡頭（停止觀察）' : '打開鏡頭：MEMO 開始觀察這裡，眼睛也會跟著你';
   $('#camera-toggle').setAttribute('aria-pressed', String(on)); $('#camera-toggle').setAttribute('aria-label', label); $('#camera-toggle').title = label;
@@ -453,8 +447,9 @@ function renderCamera(state) {
   $('#camera-chip').classList.toggle('on', on);
   $('#camera-chip-label').textContent = CAMERA_STATES[state] || CAMERA_STATES.off;
   $('#camera-preview').hidden = !on;
+  $('#observe-state').textContent = on ? '觀察中' : '鏡頭沒開';
+  $('#observe-state').classList.toggle('live', on);
   updateTitle();
-  renderEye();
 }
 renderCamera('off');
 // MEMO waves back only when it is doing nothing else and the person is not typing.
@@ -467,6 +462,7 @@ function waveBack() { if (companion?.paused) setMirror('happy', performance.now(
 async function cameraOn({ quiet = false } = {}) {
   cameraWanted = true; storage.set('memo.camera', 'on');
   if (!(await camera.start())) { if (!quiet) toast(CAMERA_STATES[camera.state]); return false; }
+  syncObservation(activeDevice).catch(() => {});
   tracking ||= startTracking(camera.video, {
     onFace(reading, now) {
       runner?.face(Boolean(reading));
@@ -516,19 +512,40 @@ function startLooks() {
   runner.start();
 }
 
-// Tasks section: one line of what MEMO sees now (the observation log stays in the
-// backend for MEMO to answer from, not on screen), then the tasks: 短期 (done once) and 定時
-// (watched, every so often, daily). With the camera off and no task it folds to a hint.
+// 日常紀錄 section: what MEMO saw last, and today's log (what the camera saw, what tasks
+// found, the room's events, marked when MEMO said it out loud). MEMO only looks again when
+// the scene changes, someone comes or goes, or on its 15-minute patrol, and a look the model
+// could not read leaves what it saw before in place, so the latest try is shown when it failed.
+const SOURCE_WORDS = { observe: '鏡頭', look: '任務', environment: '環境' };
 let observationSyncedAt = -Infinity;
 async function syncObservation(device) {
   observationSyncedAt = performance.now();
-  const state = await request(`/api/v1/devices/${encodeURIComponent(device)}/observation`);
+  const base = `/api/v1/devices/${encodeURIComponent(device)}`;
+  const midnight = new Date().setHours(0, 0, 0, 0), hours = Math.max(1, Math.ceil((Date.now() - midnight) / 3600000));
+  const [state, log, [tried]] = await Promise.all([
+    request(`${base}/observation`), request(`${base}/observation/log?hours=${hours}&limit=40`), request(`${base}/vision/observations?job_id=observe&limit=1`)]);
   if (device !== activeDevice) return;
-  const now = state.now;
+  const now = state.now, today = log.filter(entry => new Date(entry.at) >= midnight);
   const parts = now ? [now.summary || (now.people != null && `${now.people} 人`), now.lighting && `光線${now.lighting}`].filter(Boolean) : [];
-  $('#observe-now').textContent = now ? `${now.seen_at}　${parts.join('・')}` : 'MEMO 正在看第一眼…';
+  $('#observe-seen').textContent = now ? `${now.seen_at} 看到：${parts.join('・')}` : 'MEMO 正在看第一眼…';
+  // The latest look is newer than what MEMO saw last whenever it is not a 'seen' one.
+  const failed = tried && tried.result !== 'seen';
+  $('#observe-tried').textContent = failed ? `${clockOf(tried.captured_at)} ${now ? '有再看一次' : '看了一眼'}，但沒看清楚（${REASON_WORDS[tried.reason] || '看不出來'}）` : '';
+  $('#observe-tried').hidden = !failed;
+  $('#observe-seen').hidden = !now && failed;
   $('#observe-now').hidden = !now && !camera.active;
+  $('#observe-log').replaceChildren(...today.map(entry => element('li', { className: entry.spoken ? 'spoken' : '' },
+    element('time', { textContent: clockOf(entry.at) }),
+    element('span', { className: 'tag', textContent: SOURCE_WORDS[entry.source] || entry.source }),
+    element('span', { textContent: entry.text }))));
+  $('#observe-empty').hidden = today.length > 0 || !$('#observe-now').hidden;
+  $('#observe-clear').hidden = !today.some(entry => entry.source !== 'environment') && !now;
 }
+$('#observe-clear').onclick = async () => {
+  if (!confirm('要清除鏡頭的觀察紀錄嗎？MEMO 記得的現場也會一起清掉；環境事件會保留。')) return;
+  try { await request(`/api/v1/devices/${encodeURIComponent(activeDevice)}/observation/log`, { method: 'DELETE' }); await syncObservation(activeDevice); }
+  catch (error) { toast(error.message); }
+};
 
 // Tasks: reminders, and look tasks with their latest record and history (answer, photo
 // quality, and the scene: 人、事、時、地、物、動作). Photos themselves are never kept.
@@ -596,7 +613,6 @@ function renderLooks(jobs, records) {
   const active = jobs.filter(job => job.status === 'active').length;
   $('#looks-state').textContent = `${active} 個任務進行中`; $('#looks-state').hidden = !active;
   $('#looks-empty').hidden = jobs.length > 0;
-  eye.jobs = jobs.length; renderEye();
   const card = job => {
     const button = (text, action, extra = '') => element('button', { type: 'button', className: `btn small ${extra}`.trim(), textContent: text, onclick: () => lookAction(job, action) });
     const paused = job.status === 'paused', look = job.purpose === 'look';
