@@ -175,7 +175,10 @@ export function measureQuality(rgba, width, height) {
 // Chat phrasings that mean "look at this through the camera"; the same list as the backend's
 // memo.domain.vision.LOOK_REQUEST. The model's {"type":"look"} covers everything else.
 export const LOOK_REQUEST = /手上|手裡|手中|拿著|拿的(是|東西)|這(個|是|張|本|瓶|罐|盒|些|上面)?是什麼|這是啥|翻譯(一下)?(這|它|上面|看看)|上面寫(的|著)?(是)?什麼|寫(的|著)?是什麼|(看|瞧)(一下|看)?(這個|這|我手|我拿|我現在)|你看得到(我|這)|幫我看(一下|看)?(這|我)/;
-export const wantsLook = text => LOOK_REQUEST.test(text || '');
+// 「幫我顧著箱子」「幫我看我的東西有沒有被動過」 set up a watched task instead; the same
+// phrasings as the backend's memo.domain.schedule.parse_watch.
+export const WATCH_REQUEST = /(幫我|替我|請你?|你)(顧|盯|守|看好|看住|看緊|看著)|有沒有被?人?(動|碰|拿|翻|移)|有人(動|碰|拿|翻)/;
+export const wantsLook = text => LOOK_REQUEST.test(text || '') && !WATCH_REQUEST.test(text || '');
 
 // What the voice reads: quoted foreign text (「Fragile」意思是易碎品) is shown, not spoken,
 // since the Chinese voice cannot pronounce it; the Chinese translation is.
@@ -187,31 +190,36 @@ export function spokenText(text) {
 
 // ---- Watching for change -----------------------------------------------------------------
 
-// How different two grey copies of the frame are (0-255), ignoring an overall change in
-// brightness, so a camera adjusting its exposure is not a change.
-export function greyDiff(a, b) {
-  if (!a || !b || a.length !== b.length) return 255;
-  let meanA = 0, meanB = 0;
-  for (let i = 0; i < a.length; i++) { meanA += a[i]; meanB += b[i]; }
-  meanA /= a.length; meanB /= b.length;
-  let sum = 0;
-  for (let i = 0; i < a.length; i++) sum += Math.abs((a[i] - meanA) - (b[i] - meanB));
-  return sum / a.length;
+// The share of the frame (0-1) that clearly differs between two grey copies, after taking
+// out each frame's overall level (its median, which a moved object hardly shifts). A cup
+// moved in a big frame changes few pixels by a lot: the share notices it where an average
+// over the whole frame would not.
+export function changedShare(a, b, pixel = 25) {
+  if (!a || !b || a.length !== b.length) return 1;
+  const median = values => { const sorted = Float32Array.from(values).sort(); return sorted[sorted.length >> 1]; };
+  const levelA = median(a), levelB = median(b);
+  let changed = 0;
+  for (let i = 0; i < a.length; i++) if (Math.abs((a[i] - levelA) - (b[i] - levelB)) > pixel) changed++;
+  return changed / a.length;
 }
 
 // Watches one region (or the whole frame) for a change that stays. Each update compares the
-// frame with the reference (the last settled scene) and with the previous frame:
+// frame with the reference (the last settled scene) and with the previous frame, as the
+// share of pixels that changed:
 //   'idle'     nothing changed, or the change went away (a hand came and went)
 //   'onset'    the first frame that differs: a good moment for a photo of what is happening
 //   'changing' still different and still moving
 //   'settled'  different from the reference and still for `settle` updates in a row
-// After acting on 'settled', rebase() makes the current scene the new reference.
-export function createChangeWatch({ threshold = 12, still = 5, settle = 3 } = {}) {
-  let reference = null, previous = null, steady = 0, changing = false;
+// After acting on 'settled', rebase() makes the current scene the new reference. A saved
+// `reference` (the task's baseline, kept across visits) is used when it fits the frame, so a
+// change made while the page was closed still shows; otherwise the first frame is the one.
+export function createChangeWatch({ threshold = .03, still = .01, settle = 3, reference = null } = {}) {
+  let previous = null, steady = 0, changing = false;
   return {
     update(frame) {
-      if (!reference) { reference = previous = frame; return 'idle'; }
-      const change = greyDiff(frame, reference), motion = greyDiff(frame, previous);
+      if (!reference || reference.length !== frame.length) { reference = previous = frame; return 'idle'; }
+      previous ||= reference;
+      const change = changedShare(frame, reference), motion = changedShare(frame, previous);
       previous = frame;
       if (change < threshold) { changing = false; steady = 0; return 'idle'; }
       if (!changing) { changing = true; steady = 0; return 'onset'; }

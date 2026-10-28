@@ -295,6 +295,7 @@ async function chat(text, { photo = false } = {}) {
     say(hint ? `${reply.text}\n${hint}` : reply.text, { quote, voice: true, sources: reply.sources || [], spoken: image ? spokenText(reply.text) : reply.text, report: reply.mode === 'assignment' });
     showEmotion(reply.emotion);
     lookAgain = reply.look_requested && camera.active;
+    if (reply.actions?.some(action => action.includes('持續盯著'))) offerRoi(selected);
   } catch (error) { say(error.message, { quote: text }); showEmotion({ label: 'error', intensity: .5 }); }
   finally { chatting = false; $('#send-message').disabled = false; lastReplyAt = performance.now(); }
   if (lookAgain) chat(text, { photo: true });
@@ -554,7 +555,9 @@ function sceneLine(scene) {
 function recordLine(record) {
   const answer = record.mode === 'change' ? { yes: '有變化', no: '沒變化' }[record.result] || RESULT_WORDS[record.result] : RESULT_WORDS[record.result];
   const flags = (record.quality?.flags || []).map(flag => QUALITY_WORDS[flag]);
-  return [`${clockOf(record.captured_at)} ${answer}`, flags.length && `照片${flags.join('、')}`, record.reason && (REASON_WORDS[record.reason] || record.reason), record.decision === 'baseline' && '設為基準', record.detail].filter(Boolean).join('・');
+  const unverified = record.result === 'yes' && record.reason && record.reason !== 'quiet_hours' && '畫面偵測到，模型沒確認';
+  const sensors = record.sensors || {}, light = [sensors.light_changed && '光線剛變過', sensors.dark && '房間很暗'];
+  return [`${clockOf(record.captured_at)} ${answer}`, flags.length && `照片${flags.join('、')}`, ...light, record.reason && (REASON_WORDS[record.reason] || record.reason), unverified, record.decision === 'baseline' && '設為基準', record.detail].filter(Boolean).join('・');
 }
 async function syncLooks(device) {
   looksSyncedAt = performance.now();
@@ -562,6 +565,17 @@ async function syncLooks(device) {
   const jobs = (await request(`${base}/schedules`)).filter(job => job.purpose === 'look');
   const records = jobs.length ? await request(`${base}/vision/observations?limit=80`) : [];
   if (device === activeDevice) renderLooks(jobs, records);
+  return jobs;
+}
+// A new watched task: framing the thing makes small changes count and keeps people walking
+// by out of it, so MEMO offers the region editor right away.
+async function offerRoi(device) {
+  const jobs = await syncLooks(device).catch(() => []);
+  const job = jobs.filter(item => item.look?.watch && !item.look.roi).sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+  if (!job || device !== activeDevice) return;
+  if (!camera.active) { toast('打開鏡頭後，可以在「拍照任務」按「框選範圍」框出要盯著的東西。'); return; }
+  toast('框出要盯著的東西，小小的變化也看得出來；不框就看整個畫面。');
+  openRoi(job);
 }
 function renderLooks(jobs, records) {
   $('#looks-state').textContent = jobs.length ? `${jobs.filter(job => job.status === 'active').length} 個進行中` : '沒有任務';
@@ -574,13 +588,14 @@ function renderLooks(jobs, records) {
       element('p', { className: 'look-last', textContent: mine[0] ? recordLine(mine[0]) : '還沒有紀錄' }),
       mine.length > 0 && element('details', {}, element('summary', { textContent: `紀錄（${mine.length}）` }),
         element('ol', {}, ...mine.slice(0, 12).map(record => element('li', {}, element('span', { textContent: recordLine(record) }), sceneLine(record.scene) && element('small', { textContent: sceneLine(record.scene) }))))),
-      element('div', { className: 'look-actions' }, button('框選範圍', 'roi'), button(job.status === 'paused' ? '恢復' : '暫停', 'toggle'), button('刪除', 'delete')));
+      element('div', { className: 'look-actions' }, button('框選範圍', 'roi'), job.look?.mode === 'change' && button(job.look.watch ? '停止盯著' : '持續盯著', 'watch'), button(job.status === 'paused' ? '恢復' : '暫停', 'toggle'), button('刪除', 'delete')));
   }));
 }
 async function lookAction(job, action) {
   const path = `/api/v1/devices/${encodeURIComponent(activeDevice)}/schedules/${job.id}`;
   try {
     if (action === 'roi') { openRoi(job); return; }
+    if (action === 'watch') await request(`${path}/look`, { method: 'PUT', body: JSON.stringify({ watch: !job.look.watch }) });
     if (action === 'toggle') await request(path, { method: 'PATCH', body: JSON.stringify({ status: job.status === 'paused' ? 'active' : 'paused' }) });
     if (action === 'delete') {
       if (!confirm(`要刪除「${job.description}」嗎？\n這個任務的拍照紀錄也會一起刪除。`)) return;
@@ -619,7 +634,7 @@ async function saveRoi(roi) {
     const job = roiJob;
     await request(`/api/v1/devices/${encodeURIComponent(activeDevice)}/schedules/${job.id}/look`, { method: 'PUT', body: JSON.stringify({ roi }) });
     // A change task compares within its region, so a new region starts a new reference.
-    if (job.look?.mode === 'change') await references.remove(job.id);
+    if (job.look?.mode === 'change') { await references.remove(job.id); runner?.forget(job.id); }
     $('#roi-dialog').close(); toast(roi ? '已更新拍照範圍。' : '改回拍整個畫面。');
     syncLooks(activeDevice).catch(() => {});
   } catch (error) { toast(error.message); }

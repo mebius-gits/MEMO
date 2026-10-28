@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   GAZE, MIRROR, REPLY_HOLD, createChangeWatch, createExpressionReader, createGaze, createWaveDetector,
-  cropRect, greyDiff, measureQuality, openPalm, screenFace, spokenText, wantsLook, wantsReport,
+  changedShare, cropRect, measureQuality, openPalm, screenFace, spokenText, wantsLook, wantsReport,
 } from '../src/perception.js';
 
 test('eyes look toward the person and rest when no one is there', () => {
@@ -127,6 +127,8 @@ test('photo regions and quality', () => {
 test('chat messages that mean "look at this", and what the voice reads', () => {
   for (const text of ['MEMO 我手上拿著什麼', '這是什麼？', '幫我翻譯這個', '上面寫什麼', '你看得到我嗎']) assert.equal(wantsLook(text), true, text);
   for (const text of ['今天天氣如何', '看看明天行程', '']) assert.equal(wantsLook(text), false, text);
+  // Watching a thing sets up a watched task; no countdown photo for it.
+  for (const text of ['幫我看我的東西有沒有被動過', '幫我顧著這個箱子']) assert.equal(wantsLook(text), false, text);
   assert.equal(spokenText('「Fragile」意思是易碎品，要小心拿。'), '意思是易碎品，要小心拿。');
   assert.equal(spokenText('這是「早安」兩個字。'), '這是「早安」兩個字。');
   assert.equal(spokenText('「Hello」'), '「Hello」'); // never read nothing
@@ -140,9 +142,9 @@ function frame(box = 4, light = 100) {
 }
 
 test('a change counts once it stays; light and passing hands do not', () => {
-  assert.equal(greyDiff(frame(), frame()), 0);
-  assert.ok(greyDiff(frame(), frame(4, 160)) < 1); // the camera brightening is no change
-  assert.ok(greyDiff(frame(), frame(10)) > 20);
+  assert.equal(changedShare(frame(), frame()), 0);
+  assert.equal(changedShare(frame(), frame(4, 160)), 0); // the camera brightening is no change
+  assert.ok(changedShare(frame(), frame(10)) > .2); // the box moved: where it was and where it is
   const watch = createChangeWatch();
   assert.equal(watch.update(frame()), 'idle'); // the first frame is the reference
   assert.equal(watch.update(frame(4, 150)), 'idle');
@@ -156,6 +158,24 @@ test('a change counts once it stays; light and passing hands do not', () => {
   assert.equal(watch.update(frame(10)), 'idle'); // the new place is the reference now
   // The box taken away entirely.
   assert.deepEqual([frame(null), frame(null), frame(null), frame(null)].map(f => watch.update(f)), ['onset', 'changing', 'changing', 'settled']);
+});
+
+test('a small thing moved in a big frame still counts', () => {
+  // A whole 48x27 view with no region drawn: a 3x3 cup moves, 18 of 1296 pixels.
+  const cup = at => { const grey = new Float32Array(48 * 27).fill(90); for (let y = 10; y < 13; y++) for (let x = at; x < at + 3; x++) grey[y * 48 + x] = 220; return grey; };
+  assert.ok(changedShare(cup(10), cup(30)) > .012);
+  const region = createChangeWatch({ threshold: .012 });
+  region.update(cup(10));
+  assert.deepEqual([cup(30), cup(30), cup(30), cup(30)].map(f => region.update(f)), ['onset', 'changing', 'changing', 'settled']);
+});
+
+test('a saved baseline catches a change made while the page was away', () => {
+  // The box was moved before the page came back: the first frame already differs.
+  const watch = createChangeWatch({ reference: frame() });
+  assert.deepEqual([frame(10), frame(10), frame(10), frame(10)].map(f => watch.update(f)), ['onset', 'changing', 'changing', 'settled']);
+  // A saved copy of another size (another region) is not used.
+  const other = createChangeWatch({ reference: new Float32Array(4) });
+  assert.equal(other.update(frame(10)), 'idle');
 });
 
 test('asking how it is here takes a photo straight away', () => {

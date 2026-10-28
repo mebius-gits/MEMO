@@ -3,14 +3,20 @@
 // whole space and for each watched task's region (nothing leaves the page). When the space
 // changes and settles, someone appears or leaves, or a patrol is due, a photo goes to the
 // backend (/observe). When a watched region changes and settles, that task runs at once with
-// a photo of the moment the change began. Look tasks that are simply due are polled for every
-// few seconds; a new situation there needs a confirming photo, which is taken a few seconds
-// after the first in any case, so it can be sent the moment it is asked for. All of this also
-// runs while the tab is hidden, on worker timers.
+// a photo of the moment the change began. A region is compared with the task's own baseline
+// (its grey copy is saved with the reference photo), so a change made while the page was
+// closed still shows; a region without a saved copy is looked at once right away instead.
+// Look tasks that are simply due are polled for every few seconds; a new situation there
+// needs a confirming photo, which is taken a few seconds after the first in any case, so it
+// can be sent the moment it is asked for. All of this also runs while the tab is hidden, on
+// worker timers.
 import { createChangeWatch } from './perception.js';
 import { references } from './references.js';
 
 const POLL_MS = 5000, CONFIRM_MS = 6000, WATCH_MS = 2000;
+// Grey copies: the whole space 64 px wide, a watched region 48 px. A change is this share of
+// the copy's pixels: a person in the space; in a region, even a cup in an unframed view.
+const REGION_WIDTH = 48, SPACE_SHARE = .06, REGION_SHARE = .012;
 // A face seen this long means someone arrived; unseen this long, that they left.
 const ARRIVE_MS = 3000, LEAVE_MS = 30000;
 
@@ -78,8 +84,12 @@ export function createLookRunner({ camera, request, device, onNotice = () => {},
       kept = confirming || shot;
     }
     if (result.store_reference) await references.put(task.job_id, kept.image);
-    // What was just photographed is the region's settled scene from now on.
-    if (task.mode === 'change') regions.get(task.job_id)?.rebase(await camera.sample({ roi: task.roi, width: 48 }).catch(() => null));
+    // What was just photographed is the region's settled scene from now on, here and in the
+    // saved copy. An answer that could not tell (too dark, no model) leaves both as they were.
+    if (task.mode === 'change' && (result.store_reference || ['yes', 'no'].includes(result.result))) {
+      const grey = await camera.sample({ roi: task.roi, width: REGION_WIDTH }).catch(() => null);
+      if (grey) { regions.get(task.job_id)?.rebase(grey); references.putGrey(task.job_id, grey, task.roi); }
+    }
     if (result.status === 'queued') onNotice();
     return result;
   }
@@ -103,7 +113,7 @@ export function createLookRunner({ camera, request, device, onNotice = () => {},
   }
 
   // ---- MEMO's own observation ----
-  const space = createChangeWatch({ threshold: 10 });
+  const space = createChangeWatch({ threshold: SPACE_SHARE });
   const regions = new Map(), moments = new Map();
   let lastLook = 0, observing = false, patrolMs = 15 * 60000, gapMs = 20000;
   const presence = { here: null, seenSince: 0, lastSeen: 0 };
@@ -143,12 +153,12 @@ export function createLookRunner({ camera, request, device, onNotice = () => {},
       if (space.update(frame) === 'settled' && now - lastLook >= gapMs) observe('scene_change');
       else if (now - lastLook >= patrolMs) observe('patrol');
       for (const task of watching) {
-        if (!regions.has(task.job_id)) regions.set(task.job_id, createChangeWatch());
-        const region = regions.get(task.job_id), state = region.update(await camera.sample({ roi: task.roi, width: 48 }));
+        if (!regions.has(task.job_id)) regions.set(task.job_id, watcher(task));
+        const region = regions.get(task.job_id), state = region.update(await camera.sample({ roi: task.roi, width: REGION_WIDTH }));
         // The moment something starts to happen in the region (often a hand reaching in).
         if (state === 'onset') shoot(task.roi, 640).then(shot => shot && moments.set(task.job_id, shot.image));
         if (state !== 'settled' || busy.size) continue;
-        region.rebase(await camera.sample({ roi: task.roi, width: 48 }));
+        region.rebase(await camera.sample({ roi: task.roi, width: REGION_WIDTH }));
         const moment = moments.get(task.job_id); moments.delete(task.job_id);
         try {
           const triggered = await post(`/schedules/${task.job_id}/trigger`, {});
@@ -156,6 +166,17 @@ export function createLookRunner({ camera, request, device, onNotice = () => {},
         } catch (error) { if (error.status !== 409) console.warn('watch', error.message); }
       }
     } catch { /* the camera stopped between checks */ }
+  }
+  // A region's watch, starting from the task's saved grey copy when it is of this region.
+  // Without one the page cannot know what changed while it was not looking, so MEMO looks
+  // once right away (the backend refuses while a run is going, or ran a moment ago).
+  function watcher(task) {
+    const region = createChangeWatch({ threshold: REGION_SHARE });
+    references.grey(task.job_id).then(saved => {
+      if (saved && saved.roi === JSON.stringify(task.roi ?? null)) region.rebase(saved.grey);
+      else post(`/schedules/${task.job_id}/trigger`, {}).then(start).catch(error => { if (error.status !== 409) console.warn('watch resume', error.message); });
+    });
+    return region;
   }
 
   return {
@@ -167,6 +188,8 @@ export function createLookRunner({ camera, request, device, onNotice = () => {},
     },
     stop() { stops.forEach(stop => stop()); stops = []; },
     poll, face,
+    // A task's region was redrawn: its watch starts over from the new region.
+    forget(jobId) { regions.delete(jobId); moments.delete(jobId); },
     get activeJobs() { return activeJobs; },
   };
 }
