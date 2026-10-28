@@ -102,6 +102,10 @@ class DeviceInteractionRequest(Schema):
         description="使用者上傳的一張圖片，data:image/jpeg|png|webp;base64,...，最大 2 MB；"
         "只交給模型看，不保存。",
     )
+    camera: Literal["on", "off"] | None = Field(
+        default=None,
+        description="網頁鏡頭現在是否開著，讓 MEMO 知道自己看不看得到；未提供表示不知道。",
+    )
 
     @field_validator("image")
     @classmethod

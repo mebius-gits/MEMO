@@ -26,7 +26,15 @@ def environment_relevant(request: InteractionInput) -> bool:
     if request.context_source != "stored_readings":
         return True  # The caller supplied the context on purpose.
     if request.mode == "assignment":
-        return True  # Watching and reporting take the readings into account.
+        # Reports and recalls take the readings into account; a question about what the
+        # camera sees or a watched thing does not, unless it mentions the room.
+        questions = [task.get("question", "") for task in request.vision]
+        return (
+            not talks_about_vision(request.user_message, questions)
+            or talks_about_environment(request.user_message)
+            or asks_for_report(request.user_message)
+            or (request.attention or {}).get("level") == "danger"
+        )
     last_user = next((m["content"] for m in reversed(request.history) if m["role"] == "user"), "")
     return (
         talks_about_environment(request.user_message)
@@ -90,6 +98,9 @@ class InteractionService:
             "理解發生了什麼，值得的時候告訴使用者；平常也陪他聊天、陪他一起做事。"
             "你不是其他 AI 助手。被問到你是誰、叫什麼、誰做的，就說你是 MEMO，"
             "不提其他名字、公司、學校或模型。使用繁體中文。"
+            "被問你會什麼、能看什麼、能監控什麼時，鏡頭和感測器兩邊都要說到：鏡頭能隨時拍一張看"
+            "（你、你手上的東西、房間裡有誰）、定時拍照確認一件事、持續盯著東西有沒有被動，"
+            "也會自己留意有沒有人回來、有沒有動物；感測器感覺溫濕度、空氣和光線。"
             "【個性】天真，有自己的一套小邏輯，會很認真地說出有點奇怪的話；"
             "把日常小事當成冒險（堆滿衣服的椅子是「衣服山」，整理房間是去救椅子）；"
             "偶爾吐槽、帶一點二次元式的調侃（「原來你選的是困難模式」），但嘴上調侃一定會幫忙，"
@@ -127,7 +138,12 @@ class InteractionService:
             "建議只能來自 approved_suggestions，不新增具體通風或健康建議。"
             "actions_done 是後端剛為這則訊息完成的動作（設定提醒、延後、取消等），"
             "要自然地確認；沒列在 actions_done 的動作絕不宣稱已完成。"
-            "jobs 是目前有效的排程，可用來回答使用者有哪些提醒。"
+            "jobs 是目前有效的排程，可用來回答使用者有哪些提醒；它只是任務清單，"
+            "不是你看到的畫面。"
+            "camera 是網頁鏡頭現在的狀態：on 開著（需要時你可以拍照看），off 關著"
+            "（說鏡頭關著，請他按畫面右上角的鏡頭按鈕打開），null 表示不知道。"
+            "沒有附圖、也沒有 situation 或 look_tasks 紀錄時，不要說你看到了什麼，"
+            "也不要說你正在看著他。"
             "attention 是規則引擎對目前狀況的判斷：level_label 為注意、警戒或危險，"
             "minutes_active 為已持續分鐘，reminders 為已提醒次數。語氣隨嚴重程度調整："
             "注意輕聲提醒、警戒明確提醒、危險直接而緊迫；重複提醒要換說法。"
@@ -261,10 +277,12 @@ class InteractionService:
             )
             if not request.image:
                 system += (
-                    "使用者要你看他手上拿的東西、眼前的實物、紙上或包裝上的字，"
-                    "或要你翻譯看得到的東西，而這則訊息沒有圖片時，不要猜內容，"
-                    '改附 action {"type":"look"}，text 簡短請他把東西拿到鏡頭前；'
-                    "網頁會倒數拍照，再帶著照片問你一次。"
+                    "使用者問的事要用眼睛看才知道，而這則訊息沒有圖片時（你看得到我嗎、"
+                    "我在做什麼、我穿什麼、我看起來怎樣、桌上或房間裡有什麼、他手上拿的東西、"
+                    "紙上或包裝上的字、要你翻譯看得到的東西），不要猜內容，也不要說你看不到，"
+                    '改附 action {"type":"look"}：text 簡短說你看一下，要看手上的東西就請他'
+                    "拿到鏡頭前；網頁會拍照，再帶著照片問你一次。camera 是 off 時一樣附 look，"
+                    "網頁會請他先打開鏡頭。"
                 )
             if request.web_search is None:
                 system += (
@@ -306,6 +324,7 @@ class InteractionService:
                 "missed": list(request.missed),
                 "web_search": request.web_search,
                 "image_attached": bool(request.image),
+                "camera": request.camera,
                 "look_tasks": list(request.vision) if seeing else [],
                 "situation": request.situation if knowing else None,
                 "warnings": warnings if relevant else [],

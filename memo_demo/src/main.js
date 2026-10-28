@@ -289,7 +289,7 @@ async function chat(text, { photo = false } = {}) {
     const quote = image ? `${text}（${photo ? '拍照' : '附圖'}）` : text;
     say('讓我想想…', { quote, waiting: true });
     showEmotion({ label: 'thinking', intensity: .5 });
-    const reply = await request(`/api/v1/devices/${encodeURIComponent(selected)}/interaction`, { method: 'POST', body: JSON.stringify({ session_id: sessionId, request_id: crypto.randomUUID(), user_message: text, personality: personality(), ...(image ? { image } : {}) }) });
+    const reply = await request(`/api/v1/devices/${encodeURIComponent(selected)}/interaction`, { method: 'POST', body: JSON.stringify({ session_id: sessionId, request_id: crypto.randomUUID(), user_message: text, personality: personality(), camera: camera.active ? 'on' : 'off', ...(image ? { image } : {}) }) });
     if (generation !== currentGeneration) { say('裝置已切換，已略過上一個裝置的回覆。'); return; }
     const hint = reply.look_requested && !camera.active ? '先按畫面右上角的鏡頭按鈕打開鏡頭，我才看得到喔。' : '';
     say(hint ? `${reply.text}\n${hint}` : reply.text, { quote, voice: true, sources: reply.sources || [], spoken: image ? spokenText(reply.text) : reply.text, report: reply.mode === 'assignment' });

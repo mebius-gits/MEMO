@@ -107,6 +107,9 @@ class InteractionInput:
     # Time budget for the model on this reply; None uses the configured timeout. Look
     # notices use a short one so MEMO speaks within seconds, falling back to a template.
     timeout_seconds: float | None = None
+    # Whether the page's camera is on ("on" / "off"), so MEMO knows whether it can look now;
+    # None when the caller did not say.
+    camera: str | None = None
 
 
 @dataclass(frozen=True)

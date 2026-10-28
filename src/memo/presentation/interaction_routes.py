@@ -66,6 +66,7 @@ def device_interaction(
         payload.user_message,
         Personality(**payload.personality.model_dump()),
         payload.image,
+        payload.camera,
     )
 
 

@@ -42,7 +42,7 @@ class CompanionService:
             return {"query": query, "status": "not_configured", "results": [], "answers": []}
         return self.searcher.search(query)
 
-    def chat(self, device_id, session_id, request_id, text, personality, image=None):
+    def chat(self, device_id, session_id, request_id, text, personality, image=None, camera=None):
         # A retried request returns the saved reply; its action must not run twice.
         saved = self.memory.recall(device_id, session_id, request_id, text)
         if saved:
@@ -74,6 +74,7 @@ class CompanionService:
                     web_search=web_search,
                     image=image,
                     mode=mode,
+                    camera=camera,
                     **context,
                 ),
                 datetime.now(timezone.utc),
