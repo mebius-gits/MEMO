@@ -322,6 +322,9 @@ def test_an_environment_event_runs_the_task_waiting_for_it(app):
     assert context["triggered_by"] == ["CO₂ 偏高"]
     assert context["sensors"]["co2_ppm"] == 1400
     assert look_words(context) == "因為CO₂ 偏高，我去看了一下：看到yes。"
+    listed = client.get("/api/v1/devices/room/schedules")
+    assert listed.status_code == 200, listed.text
+    assert listed.json()[0]["look_state"]["triggered_by"] == ["co2_high"]
 
 
 def test_a_watched_change_is_told_when_the_model_cannot_answer(app, monkeypatch):

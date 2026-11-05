@@ -84,6 +84,9 @@ class LookStateOutput(Schema):
     baseline_text: str | None = None
     baseline_at: str | None = None
     changes: int = 0
+    sensor_run_at: str | None = None
+    sensor_run: int | None = None
+    triggered_by: list[str] | None = None
 
 
 class CaptureQuality(Schema):

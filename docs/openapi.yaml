@@ -2981,6 +2981,23 @@ components:
           type: integer
           title: Changes
           default: 0
+        sensor_run_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Sensor Run At
+        sensor_run:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Sensor Run
+        triggered_by:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Triggered By
       additionalProperties: false
       type: object
       title: LookStateOutput
